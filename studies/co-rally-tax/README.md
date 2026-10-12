@@ -5,10 +5,12 @@ Claims tested: `rotation-onset-co-rally` (primary); contextualizes `qs-rotation-
 Status: protocol-only
 
 Data availability (2026-10-12): all sources fetched KEYLESS from this host. Full-history
-gold = World Bank Pink Sheet monthly average (1960->, CC BY 4.0). The LBMA
-fix no longer exists on any free feed (FRED dropped it 2022-01-31; Nasdaq
-Data Link delisted the LBMA datasets — verified 2026-10-12), so monthly
-averages replace month-end fixes (disclosed divergence; see below).
+gold = DAILY LBMA PM fix, 1968-04→current, from two independently validated
+public mirrors (fetch-script header: 0.0004% mean dev vs FRED-era dump,
+0.06% median vs World Bank Pink Sheet monthly means, 0.36% vs GC=F month-end).
+Signals run on month-END FIXES — protocol-consistent. Pink Sheet monthly
+averages kept as cross-check only (an average smooths intra-month paths and
+shifts crossover dates — it does not generate legit signals).
 
 ## Disclosure block (required before any number is published)
 
@@ -21,13 +23,14 @@ averages replace month-end fixes (disclosed divergence; see below).
   Frank's Pool collapse-date citation is pending verification (wiki caveat
   carried forward; do not quote it until checked).
 - **Data:** `code/fetch_gold_spx_bills.py` (source + download date in header;
-  `data/` gitignored). Gold: World Bank Pink Sheet monthly average
-  (CC BY 4.0), 1960→ — **divergences:** wiki named FRED `GOLDPMGBD228NL`;
-  the LBMA fix is gone from every free feed (FRED dropped the IBA series
-  2022-01-31; Nasdaq Data Link delisted the LBMA datasets, verified
-  2026-10-12), and Pink Sheet monthly AVERAGES are not month-end fixes —
-  GC=F month-end (2000→) is the robustness check. The onset analysis needs
-  1971→ history: fully covered by Pink Sheet. SPX price: Shiller 1871→2023 + Yahoo `^SPX` stitch
+  `data/` gitignored). Gold: DAILY LBMA PM fix (1968-04→, two
+  triple-validated public mirrors — fetch-script header). **Status:** wiki
+  named FRED `GOLDPMGBD228NL`; its official feeds are all dead (FRED dropped
+  the IBA series 2022-01-31; Nasdaq Data Link delisted the LBMA datasets,
+  verified 2026-10-12) but the fix is RESTORED — the onset analysis 1971→
+  uses real month-end fixes (protocol intact; Pink Sheet monthly averages are
+  a cross-check only — averages do not generate legit signals).
+  SPX price: Shiller 1871→2023 + Yahoo `^SPX` stitch
   (level-normalized at seam); TR: Shiller dividends pre-1993, SPY adj close
   after; bills: FRED `TB3MS`.
 - **Costs:** 10 bps per switch on all rotation legs. No leverage.

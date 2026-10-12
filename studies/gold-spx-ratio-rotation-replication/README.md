@@ -5,18 +5,19 @@ Claims tested: `qs-rotation-beats-both-buyhold`, `qs-rotation-gfc-divergence`, `
 Status: protocol-only
 
 Data availability (2026-10-12): all sources fetched KEYLESS from this host. Full-history
-gold = World Bank Pink Sheet monthly average (1960->, CC BY 4.0). The LBMA
-fix no longer exists on any free feed (FRED dropped it 2022-01-31; Nasdaq
-Data Link delisted the LBMA datasets — verified 2026-10-12), so monthly
-averages replace month-end fixes (disclosed divergence; see below).
+gold = DAILY LBMA PM fix, 1968-04→current, from two independently validated
+public mirrors (fetch-script header: 0.0004% mean dev vs FRED-era dump,
+0.06% median vs World Bank Pink Sheet monthly means, 0.36% vs GC=F month-end).
+Signals run on month-END FIXES — protocol-consistent. Pink Sheet monthly
+averages kept as cross-check only (an average smooths intra-month paths and
+shifts crossover dates — it does not generate legit signals).
 
 ## Disclosure block (required before any number is published)
 
 - **Universe:** S&P 500 price index (primary, matches source) AND a
   total-return variant (SPY adjusted close 1993→; Shiller dividend-reinvestment
-  reconstruction 1985–1992); gold monthly (World Bank Pink Sheet monthly
-  average, full history) with GC=F futures month-end 2000→ as the month-end
-  robustness check.
+  reconstruction 1985–1992); gold monthly LBMA PM fix extracted from daily
+  (full history 1968→), GC=F futures month-end 2000→ as robustness check.
 - **Period:** 1985-01 → present, monthly bars. Extends the source's Jul-2020
   cutoff to test robustness through gold's 2024–25 run.
 - **Data:** fetched by `code/fetch_gold_spx_bills.py` (download date stated in
@@ -27,11 +28,11 @@ averages replace month-end fixes (disclosed divergence; see below).
   price-index leg is Yahoo `^SPX` (no dividends); TR leg is dividend-adjusted
   by construction (SPY adj close / Shiller dividends reinvested at month-end).
   **Divergences from wiki protocol:** (1) the wiki names FRED
-  `GOLDPMGBD228NL`; the LBMA fix left every free feed (FRED dropped the IBA
+  `GOLDPMGBD228NL`; its official feeds are all dead (FRED dropped the IBA
   series 2022-01-31; Nasdaq Data Link delisted the LBMA datasets — verified
-  2026-10-12). Substituted with Pink Sheet monthly averages. (2) Monthly
-  AVERAGE is not a month-end fix — signal timing on averages is the disclosed
-  divergence; GC=F month-end (2000→) is the robustness check.
+  2026-10-12) but the same fix series is restored via triple-validated public
+  mirrors (fetch-script header) — protocol intact: month-end PM fixes.
+  (2) GC=F month-end (2000→) retained as a robustness check only.
 - **Costs:** base run costless (matches source); sensitivity 10 bps per switch.
   No leverage, fully invested.
 - **Engine:** Python 3.14 + pandas 3.0.6 + xlrd 2.0.2 + openpyxl 3.1.5

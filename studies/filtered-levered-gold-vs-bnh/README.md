@@ -5,10 +5,12 @@ Claims tested: `gold-call-option-filtered-levered` (primary), `gold-trend-filter
 Status: protocol-only
 
 Data availability (2026-10-12): all sources fetched KEYLESS from this host. Full-history
-gold = World Bank Pink Sheet monthly average (1960->, CC BY 4.0). The LBMA
-fix no longer exists on any free feed (FRED dropped it 2022-01-31; Nasdaq
-Data Link delisted the LBMA datasets — verified 2026-10-12), so monthly
-averages replace month-end fixes (disclosed divergence; see below).
+gold = DAILY LBMA PM fix, 1968-04→current, from two independently validated
+public mirrors (fetch-script header: 0.0004% mean dev vs FRED-era dump,
+0.06% median vs World Bank Pink Sheet monthly means, 0.36% vs GC=F month-end).
+Signals run on month-END FIXES — protocol-consistent. Pink Sheet monthly
+averages kept as cross-check only (an average smooths intra-month paths and
+shifts crossover dates — it does not generate legit signals).
 
 ## Disclosure block (required before any number is published)
 
@@ -17,18 +19,19 @@ averages replace month-end fixes (disclosed divergence; see below).
   return / 40% bills, monthly rebalanced — the honest "what else would you
   hold" comparator for a levered sleeve).
 - **Period:** 1971-08 → present (post-Bretton-Woods gold), monthly. Daily
-  variant limited to 2000→ (COMEX GC=F is the only free daily gold feed —
+  variant runs 1968→ on daily LBMA PM fixes (full spot history —
   see divergences).
 - **Data:** `code/fetch_gold_spx_bills.py` (source + download date in header;
-  `data/` gitignored). Gold: World Bank Pink Sheet monthly average
-  (CC BY 4.0), 1960→ — **divergences:** (1) wiki named FRED
-  `GOLDPMGBD228NL`; the LBMA fix is gone from every free feed (FRED dropped
+  `data/` gitignored). Gold: DAILY LBMA PM fix (1968-04→, two
+  triple-validated public mirrors — fetch-script header). **Status:** (1)
+  wiki named FRED
+  `GOLDPMGBD228NL`; its official feeds are all dead (FRED dropped
   the IBA series 2022-01-31; Nasdaq Data Link delisted the LBMA datasets,
-  verified 2026-10-12) and no free daily LBMA feed is reachable
-  (prices.lbma.org.uk bot-walled; Stooq denies datacenter IPs), so the
-  200-day-MA daily variant runs 2000→ on GC=F futures; (2) the headline
-  monthly test (1971→) uses Pink Sheet monthly AVERAGES, not month-end fixes
-  (disclosed; GC=F month-end 2000→ is the robustness check).
+  verified 2026-10-12) but the fix is RESTORED via mirrors — the headline
+  monthly test (1971→) runs on real month-end fixes (protocol intact), and
+  the 200-day-MA variant now runs on DAILY SPOT FIXES full-history (older
+  plan was limited to GC=F 2000→). (2) GC=F month-end 2000→ and Pink Sheet
+  monthly averages stay as cross-checks.
   Bills: FRED `TB3MS`. SPX legs (for 60/40): Shiller + Yahoo stitch as in the
   sibling studies.
 - **Costs:** 10 bps per unit of exposure change. Leverage L ∈ {1, 2, 3} with
