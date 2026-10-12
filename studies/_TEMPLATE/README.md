@@ -1,6 +1,6 @@
 # Study: <wiki-slug>
 
-Wiki page: https://github.com/frankyboots/research-wiki/blob/main/studies/<wiki-slug>.md
+Wiki page: https://github.com/receiptsandregimes/research-wiki/blob/main/studies/<wiki-slug>.md
 Claims tested: <wikilinks/slugs>
 Status: protocol-only | running | verdict landed (<SUPPORTED|REFUTED|MIXED|INCONCLUSIVE>) @ commit <hash>
 

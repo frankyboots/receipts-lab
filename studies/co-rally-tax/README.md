@@ -1,6 +1,6 @@
 # Study: co-rally-tax
 
-Wiki page: https://github.com/frankyboots/research-wiki/blob/main/studies/co-rally-tax.md
+Wiki page: https://github.com/receiptsandregimes/research-wiki/blob/main/studies/co-rally-tax.md
 Claims tested: `rotation-onset-co-rally` (primary); contextualizes `qs-rotation-gfc-divergence`
 Status: protocol-only
 

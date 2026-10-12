@@ -1,6 +1,6 @@
 # receipts-lab
 
-Executable research code for the [research-wiki](https://github.com/frankyboots/research-wiki)
+Executable research code for the [research-wiki](https://github.com/receiptsandregimes/research-wiki)
 — the public record behind [Receipts & Regimes](https://youtube.com/@receiptsandregimes).
 
 The wiki holds the record (claims, questions, protocols, verdicts). This repo

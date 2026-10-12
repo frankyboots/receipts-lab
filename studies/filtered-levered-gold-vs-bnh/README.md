@@ -1,6 +1,6 @@
 # Study: filtered-levered-gold-vs-bnh
 
-Wiki page: https://github.com/frankyboots/research-wiki/blob/main/studies/filtered-levered-gold-vs-bnh.md
+Wiki page: https://github.com/receiptsandregimes/research-wiki/blob/main/studies/filtered-levered-gold-vs-bnh.md
 Claims tested: `gold-call-option-filtered-levered` (primary), `gold-trend-filter-underperforms-bnh` (same baseline leg)
 Status: protocol-only
 

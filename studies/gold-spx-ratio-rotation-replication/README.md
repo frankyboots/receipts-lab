@@ -1,6 +1,6 @@
 # Study: gold-spx-ratio-rotation-replication
 
-Wiki page: https://github.com/frankyboots/research-wiki/blob/main/studies/gold-spx-ratio-rotation-replication.md
+Wiki page: https://github.com/receiptsandregimes/research-wiki/blob/main/studies/gold-spx-ratio-rotation-replication.md
 Claims tested: `qs-rotation-beats-both-buyhold`, `qs-rotation-gfc-divergence`, `qs-rotation-asset-contributions-equal`
 Status: protocol-only
 

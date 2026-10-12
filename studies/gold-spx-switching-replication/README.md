@@ -1,6 +1,6 @@
 # Study: gold-spx-switching-replication
 
-Wiki page: https://github.com/frankyboots/research-wiki/blob/main/studies/gold-spx-switching-replication.md
+Wiki page: https://github.com/receiptsandregimes/research-wiki/blob/main/studies/gold-spx-switching-replication.md
 Claims tested: `gold-spx-switching-outperforms-both-assets`, `switching-positive-in-dotcom-subprime`, `gold-trend-filter-underperforms-bnh`
 Status: protocol-only
 
