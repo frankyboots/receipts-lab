@@ -13,29 +13,27 @@ Sources (verified reachable 2026-10-12 unless noted):
   2. Yahoo ^SPX           -> spx_price_monthly.csv   S&P 500 price index, monthly close, 1984-12 ->
   3. Yahoo SPY            -> spy_tr_monthly.csv      adj close = dividend total-return proxy, 1993 ->
   4. Yahoo GC=F           -> gold_monthly_gcf.csv    COMEX front-month gold futures close, 2000-09 ->
-  5. Nasdaq Data Link     -> lbma_gold_raw.csv       LBMA PM fix USD daily, 1968 ->
-     LBMA/GOLD                                        REQUIRES a free key in env NDATALINK_API_KEY;
-                                                      skipped with a NOTICE without one.
+  5. World Bank Pink      -> CMO-Historical-Data-Monthly.xlsx  monthly avg gold USD/oz, 1960M1 ->
+     Sheet (CC BY 4.0)                                   PRIMARY gold series (monthly AVERAGE,
+     eco3min.fr mirror   -> gold_monthly_eco3min.csv    not month-end fix); clean CSV mirror,
+                                                        0.0% deviation vs primary verified 2026-10-12
   6. Shiller ie_data.xls  -> shiller_ie_data.xls     raw monthly S&P price + dividends 1871 -> 2023-09
                                                       (as served; extend SPX price/TR pre-1984/1993;
                                                       stitch to Yahoo at analysis time, normalize seam)
 
 Retired / blocked sources (verified 2026-10-12, do not chase):
-  - FRED GOLDPMGBD228NL: retired (LBMA licensing); fredgraph.csv returns HTTP 404.
+  - LBMA gold fixes are GONE from every free feed: FRED dropped the IBA/LBMA
+    series 2022-01-31; Nasdaq Data Link has since DELISTED the LBMA datasets
+    entirely (dataset page returns app-level 404; catalog 'metals' category
+    empty — verified from unblocked egress 2026-10-12; an API key no longer
+    helps, and the NDLC WAF separately blocks /api/v3/datasets/ from
+    datacenter IPs for ALL publishers). Paid successor is LBMTD, an OTC
+    volume product — not the price history.
   - prices.lbma.org.uk/json/*: Incapsula JS wall (403, incl. from a real browser).
   - stooq.com CSVs: JS proof-of-work challenge (curl); "Access denied" from datacenter IPs.
-  - data.nasdaq.com API: may be Incapsula-blocked from datacenter hosts; report will show FAIL.
-    Verified 2026-10-12 (key set; keyless requests to the same URL are blocked
-    identically, so the WAF never reaches key validation — the block is not an
-    auth failure, and the key itself remains untested by Nasdaq):
-    this host's egress IP is WAF-blocked outright
-    (curl, python, browser-impersonating TLS, and a real browser all get the Incapsula 403).
-    Run this fetch once from an unblocked network (e.g. residential) and place
-    lbma_gold_raw.csv under data/ if you land on a blocked host.
-    The official client (pip nasdaq-data-link, module `nasdaqdatalink`) does NOT
-    help: it hits the same /api/v3/datasets/ paths, same WAF 403 (verified
-    2026-10-12). The block is path+IP scoped: /datatable/ and /bulkdownloads/
-    paths pass, /datasets/ does not — even for public datasets (FRED/TB3MS).
+  - Month-end spot gold pre-2000: no free source remains. Use Pink Sheet
+    monthly averages (protocol divergence, disclosed) and GC=F month-end
+    (2000->) as the robustness check.
 
 Stdlib only (urllib/json/csv) — pandas/xlrd are analysis-time deps (see requirements.txt).
 """
@@ -117,20 +115,38 @@ def fetch_yahoo(symbol, fname, field, data_dir):
     return len(rows)
 
 
-def fetch_lbma(data_dir):
-    key = os.environ.get("NDATALINK_API_KEY", "").strip()
-    if not key:
-        print("  NOTICE: NDATALINK_API_KEY not set — skipping LBMA/GOLD. "
-              "Full-history gold (pre-2000) is unavailable without it; "
-              "keyless runs are restricted to 2000 -> via GC=F.")
-        return 0
-    url = ("https://data.nasdaq.com/api/v3/datasets/LBMA/GOLD.csv"
-           f"?api_key={urllib.parse.quote(key)}&start_date=1968-01-01&order=asc")
-    raw = get(url)
-    path = os.path.join(data_dir, "lbma_gold_raw.csv")
+PINK_SHEET_URL = ("https://thedocs.worldbank.org/en/doc/"
+                  "74e8be41ceb20fa0da750cda2f6b9e4e-0050012026/related/"
+                  "CMO-Historical-Data-Monthly.xlsx")
+ECO3MIN_GOLD_URL = "https://eco3min.fr/dataset/gold-price.csv"
+
+
+def fetch_pink_sheet(data_dir):
+    """World Bank Pink Sheet monthly workbook (raw, CC BY 4.0). Parse at
+    analysis time: sheet 'Monthly Prices', header row index 4, column 'Gold'
+    = monthly average USD/oz since 1960M1; dates labeled '1960M01'. The doc
+    URL embeds a per-release slug — if this 404s, re-grab the
+    CMO-Historical-Data-Monthly.xlsx link from
+    https://www.worldbank.org/en/research/commodity-markets"""
+    import hashlib
+    raw = get(PINK_SHEET_URL)
+    path = os.path.join(data_dir, "CMO-Historical-Data-Monthly.xlsx")
     with open(path, "wb") as f:
         f.write(raw)
-    n = raw.decode("utf-8", "replace").count("\n") - 1
+    print(f"  wrote {path} ({len(raw)} bytes, "
+          f"sha256={hashlib.sha256(raw).hexdigest()[:16]})")
+    return len(raw)
+
+
+def fetch_eco3min_gold(data_dir):
+    """eco3min.fr mirror of the Pink Sheet monthly gold series, clean CSV
+    (date, gold_price_usd). Verified 0.0% deviation vs the primary xlsx on
+    2026-10-12. Fallback when the WB doc slug rotates. Cite the World Bank."""
+    raw = get(ECO3MIN_GOLD_URL).decode("utf-8", "replace")
+    path = os.path.join(data_dir, "gold_monthly_eco3min.csv")
+    with open(path, "w") as f:
+        f.write(raw)
+    n = raw.strip().count("\n")
     print(f"  wrote {path} ({n} rows)")
     return n
 
@@ -168,7 +184,6 @@ def probe(url, label):
 
 def report():
     print("Source reachability report (no files written):")
-    key = os.environ.get("NDATALINK_API_KEY", "").strip()
     results = {
         "fred_tb3ms": probe("https://fred.stlouisfed.org/graph/fredgraph.csv?id=TB3MS", "FRED TB3MS"),
         "yahoo_spx": probe(
@@ -182,14 +197,9 @@ def report():
             "Yahoo GC=F"),
         "shiller": probe("http://www.econ.yale.edu/~shiller/data/ie_data.xls",
                          "Shiller ie_data.xls"),
+        "pink_sheet": probe(PINK_SHEET_URL, "World Bank Pink Sheet (monthly)"),
+        "eco3min_gold": probe(ECO3MIN_GOLD_URL, "eco3min gold CSV mirror"),
     }
-    if key:
-        results["nasdaq_lbma"] = probe(
-            "https://data.nasdaq.com/api/v3/datasets/LBMA/GOLD.csv"
-            f"?api_key={urllib.parse.quote(key)}&rows=5",
-            "Nasdaq Data Link LBMA/GOLD")
-    else:
-        print("  [SKIP] Nasdaq Data Link LBMA/GOLD (no NDATALINK_API_KEY in env)")
     return 0 if all(results.values()) else 1
 
 
@@ -211,7 +221,8 @@ def main():
         ("SPY", lambda: fetch_yahoo("SPY", "spy_tr_monthly.csv", "adjclose", d)),
         ("GC=F", lambda: fetch_yahoo("GC=F", "gold_monthly_gcf.csv", "close", d)),
         ("Shiller", lambda: fetch_shiller(d)),
-        ("LBMA/GOLD", lambda: fetch_lbma(d)),  # returns 0 (notice) without key
+        ("Pink Sheet", lambda: fetch_pink_sheet(d)),
+        ("eco3min gold", lambda: fetch_eco3min_gold(d)),
     ]
     for name, fn in jobs:
         print(f"[fetch] {name}")

@@ -4,9 +4,11 @@ Wiki page: https://github.com/frankyboots/research-wiki/blob/main/studies/co-ral
 Claims tested: `rotation-onset-co-rally` (primary); contextualizes `qs-rotation-gfc-divergence`
 Status: protocol-only
 
-Data availability (2026-10-12): all free sources reachable from this host via the fetch
-script; full-history gold (pre-2000) requires a free Nasdaq Data Link key
-(`NDATALINK_API_KEY`) — LBMA pull is skipped without it (see Disclosure block).
+Data availability (2026-10-12): all sources fetched KEYLESS from this host. Full-history
+gold = World Bank Pink Sheet monthly average (1960->, CC BY 4.0). The LBMA
+fix no longer exists on any free feed (FRED dropped it 2022-01-31; Nasdaq
+Data Link delisted the LBMA datasets — verified 2026-10-12), so monthly
+averages replace month-end fixes (disclosed divergence; see below).
 
 ## Disclosure block (required before any number is published)
 
@@ -19,15 +21,18 @@ script; full-history gold (pre-2000) requires a free Nasdaq Data Link key
   Frank's Pool collapse-date citation is pending verification (wiki caveat
   carried forward; do not quote it until checked).
 - **Data:** `code/fetch_gold_spx_bills.py` (source + download date in header;
-  `data/` gitignored). Gold: LBMA PM fix via Nasdaq Data Link (env
-  `NDATALINK_API_KEY`) — **divergence:** wiki named FRED `GOLDPMGBD228NL`,
-  retired by FRED (HTTP 404 verified 2026-10-12); GC=F proxy only covers
-  2000→, and onset analysis needs the full 1971→ history, so the key is
-  REQUIRED for this study. SPX price: Shiller 1871→2023 + Yahoo `^SPX` stitch
+  `data/` gitignored). Gold: World Bank Pink Sheet monthly average
+  (CC BY 4.0), 1960→ — **divergences:** wiki named FRED `GOLDPMGBD228NL`;
+  the LBMA fix is gone from every free feed (FRED dropped the IBA series
+  2022-01-31; Nasdaq Data Link delisted the LBMA datasets, verified
+  2026-10-12), and Pink Sheet monthly AVERAGES are not month-end fixes —
+  GC=F month-end (2000→) is the robustness check. The onset analysis needs
+  1971→ history: fully covered by Pink Sheet. SPX price: Shiller 1871→2023 + Yahoo `^SPX` stitch
   (level-normalized at seam); TR: Shiller dividends pre-1993, SPY adj close
   after; bills: FRED `TB3MS`.
 - **Costs:** 10 bps per switch on all rotation legs. No leverage.
-- **Engine:** Python 3.14 + pandas 3.0.6 + xlrd 2.0.2 (`requirements.txt`);
+- **Engine:** Python 3.14 + pandas 3.0.6 + xlrd 2.0.2 + openpyxl 3.1.5
+  (`requirements.txt`);
   fetch script stdlib-only. Analysis scripts land in `code/`.
 
 ## Protocol

@@ -4,32 +4,38 @@ Wiki page: https://github.com/frankyboots/research-wiki/blob/main/studies/gold-s
 Claims tested: `qs-rotation-beats-both-buyhold`, `qs-rotation-gfc-divergence`, `qs-rotation-asset-contributions-equal`
 Status: protocol-only
 
-Data availability (2026-10-12): all free sources reachable from this host via the fetch
-script; full-history gold (pre-2000) requires a free Nasdaq Data Link key
-(`NDATALINK_API_KEY`) — LBMA pull is skipped without it (see Disclosure block).
+Data availability (2026-10-12): all sources fetched KEYLESS from this host. Full-history
+gold = World Bank Pink Sheet monthly average (1960->, CC BY 4.0). The LBMA
+fix no longer exists on any free feed (FRED dropped it 2022-01-31; Nasdaq
+Data Link delisted the LBMA datasets — verified 2026-10-12), so monthly
+averages replace month-end fixes (disclosed divergence; see below).
 
 ## Disclosure block (required before any number is published)
 
 - **Universe:** S&P 500 price index (primary, matches source) AND a
   total-return variant (SPY adjusted close 1993→; Shiller dividend-reinvestment
-  reconstruction 1985–1992); gold monthly spot (LBMA PM fix, full history) with
-  GC=F futures month-end as a keyless proxy fallback 2000→.
+  reconstruction 1985–1992); gold monthly (World Bank Pink Sheet monthly
+  average, full history) with GC=F futures month-end 2000→ as the month-end
+  robustness check.
 - **Period:** 1985-01 → present, monthly bars. Extends the source's Jul-2020
   cutoff to test robustness through gold's 2024–25 run.
 - **Data:** fetched by `code/fetch_gold_spx_bills.py` (download date stated in
   its header; re-run to rebuild — `data/` is gitignored by design). Sources:
   Yahoo chart API (`^SPX`, `SPY`, `GC=F`), FRED `TB3MS`, Shiller `ie_data.xls`,
-  Nasdaq Data Link `LBMA/GOLD` (env `NDATALINK_API_KEY`). Dividend treatment:
+  World Bank Pink Sheet `CMO-Historical-Data-Monthly.xlsx` (CC BY 4.0) +
+  eco3min CSV mirror. Dividend treatment:
   price-index leg is Yahoo `^SPX` (no dividends); TR leg is dividend-adjusted
   by construction (SPY adj close / Shiller dividends reinvested at month-end).
-  **Divergence from wiki protocol:** the wiki names FRED `GOLDPMGBD228NL` —
-  FRED retired it (LBMA licensing; HTTP 404 verified 2026-10-12). Substitutes
-  as listed; direct LBMA/Stooq endpoints are bot-walled (documented in the
-  fetch script header). Keyless runs are restricted to 2000→; the full
-  1985→ backtest needs the free Nasdaq Data Link key.
+  **Divergences from wiki protocol:** (1) the wiki names FRED
+  `GOLDPMGBD228NL`; the LBMA fix left every free feed (FRED dropped the IBA
+  series 2022-01-31; Nasdaq Data Link delisted the LBMA datasets — verified
+  2026-10-12). Substituted with Pink Sheet monthly averages. (2) Monthly
+  AVERAGE is not a month-end fix — signal timing on averages is the disclosed
+  divergence; GC=F month-end (2000→) is the robustness check.
 - **Costs:** base run costless (matches source); sensitivity 10 bps per switch.
   No leverage, fully invested.
-- **Engine:** Python 3.14 + pandas 3.0.6 + xlrd 2.0.2 (`requirements.txt`);
+- **Engine:** Python 3.14 + pandas 3.0.6 + xlrd 2.0.2 + openpyxl 3.1.5
+  (`requirements.txt`);
   fetch script is stdlib-only. Analysis scripts land in `code/`.
 
 ## Protocol

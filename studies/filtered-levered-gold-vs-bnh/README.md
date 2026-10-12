@@ -4,9 +4,11 @@ Wiki page: https://github.com/frankyboots/research-wiki/blob/main/studies/filter
 Claims tested: `gold-call-option-filtered-levered` (primary), `gold-trend-filter-underperforms-bnh` (same baseline leg)
 Status: protocol-only
 
-Data availability (2026-10-12): all free sources reachable from this host via the fetch
-script; full-history gold (pre-2000) requires a free Nasdaq Data Link key
-(`NDATALINK_API_KEY`) — LBMA pull is skipped without it (see Disclosure block).
+Data availability (2026-10-12): all sources fetched KEYLESS from this host. Full-history
+gold = World Bank Pink Sheet monthly average (1960->, CC BY 4.0). The LBMA
+fix no longer exists on any free feed (FRED dropped it 2022-01-31; Nasdaq
+Data Link delisted the LBMA datasets — verified 2026-10-12), so monthly
+averages replace month-end fixes (disclosed divergence; see below).
 
 ## Disclosure block (required before any number is published)
 
@@ -18,12 +20,15 @@ script; full-history gold (pre-2000) requires a free Nasdaq Data Link key
   variant limited to 2000→ (COMEX GC=F is the only free daily gold feed —
   see divergences).
 - **Data:** `code/fetch_gold_spx_bills.py` (source + download date in header;
-  `data/` gitignored). Gold: LBMA PM fix via Nasdaq Data Link (env
-  `NDATALINK_API_KEY`) — **divergences:** (1) wiki named FRED
-  `GOLDPMGBD228NL`, retired by FRED (HTTP 404 verified 2026-10-12), and no
-  free daily LBMA feed is reachable (prices.lbma.org.uk bot-walled; Stooq
-  denies datacenter IPs), so the 200-day-MA variant runs 2000→ on GC=F
-  futures; (2) the key is REQUIRED for the headline monthly test (1971→).
+  `data/` gitignored). Gold: World Bank Pink Sheet monthly average
+  (CC BY 4.0), 1960→ — **divergences:** (1) wiki named FRED
+  `GOLDPMGBD228NL`; the LBMA fix is gone from every free feed (FRED dropped
+  the IBA series 2022-01-31; Nasdaq Data Link delisted the LBMA datasets,
+  verified 2026-10-12) and no free daily LBMA feed is reachable
+  (prices.lbma.org.uk bot-walled; Stooq denies datacenter IPs), so the
+  200-day-MA daily variant runs 2000→ on GC=F futures; (2) the headline
+  monthly test (1971→) uses Pink Sheet monthly AVERAGES, not month-end fixes
+  (disclosed; GC=F month-end 2000→ is the robustness check).
   Bills: FRED `TB3MS`. SPX legs (for 60/40): Shiller + Yahoo stitch as in the
   sibling studies.
 - **Costs:** 10 bps per unit of exposure change. Leverage L ∈ {1, 2, 3} with
@@ -31,7 +36,8 @@ script; full-history gold (pre-2000) requires a free Nasdaq Data Link key
   margin-rate proxy (TB3MS + 200 bps base, 150 bps sensitivity). Financing
   cost IS the premium in this trade; the +200 bps spread is a stated
   convention, not a quoted rate.
-- **Engine:** Python 3.14 + pandas 3.0.6 + xlrd 2.0.2 (`requirements.txt`);
+- **Engine:** Python 3.14 + pandas 3.0.6 + xlrd 2.0.2 + openpyxl 3.1.5
+  (`requirements.txt`);
   fetch script stdlib-only. Analysis scripts land in `code/`.
 
 ## Protocol
