@@ -25,6 +25,13 @@ Retired / blocked sources (verified 2026-10-12, do not chase):
   - prices.lbma.org.uk/json/*: Incapsula JS wall (403, incl. from a real browser).
   - stooq.com CSVs: JS proof-of-work challenge (curl); "Access denied" from datacenter IPs.
   - data.nasdaq.com API: may be Incapsula-blocked from datacenter hosts; report will show FAIL.
+    Verified 2026-10-12 (key set; keyless requests to the same URL are blocked
+    identically, so the WAF never reaches key validation — the block is not an
+    auth failure, and the key itself remains untested by Nasdaq):
+    this host's egress IP is WAF-blocked outright
+    (curl, python, browser-impersonating TLS, and a real browser all get the Incapsula 403).
+    Run this fetch once from an unblocked network (e.g. residential) and place
+    lbma_gold_raw.csv under data/ if you land on a blocked host.
 
 Stdlib only (urllib/json/csv) — pandas/xlrd are analysis-time deps (see requirements.txt).
 """
