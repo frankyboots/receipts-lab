@@ -8,13 +8,35 @@ identical copy; rebuild the universe with:
     python3 code/fetch_gold_spx_bills.py          # writes ./data/ (gitignored)
     python3 code/fetch_gold_spx_bills.py --report # reachability probe only
 
+GOLD LEG — composite architecture (adopted 2026-10-12; canonical record:
+research-wiki entities/lbma-gold-price.md). FREE LIVE LBMA FIX FEEDS ARE DEAD:
+the official JSON (prices.lbma.org.uk) is Incapsula-walled; FRED retired the
+IBA series 2022-01-31; Nasdaq Data Link delisted LBMA; every public mirror
+pulled the walled JSON and froze. Our primary mirror froze at 2026-02-25
+(frozen copy pin: sha256 86057834bd6fca539749f150a42255e28c4cf0fac2935b265b1c13e826fb24d9).
+Composition rule for analysis:
+  1968-04 -> 2026-02  frozen LBMA PM-fix mirror (immutable history)
+  2026-03 ->          GLD total-return monthly as LIVE EXTENSION (primary);
+                      GC=F month-end as second opinion
+  splice = ratio-normalized at seam; run signals on WITHIN-SERIES RETURNS,
+  never raw spliced levels. Measured month-end GC=F-vs-fix basis
+  (2000-10..2026-01, 260 mo): median 0.36%, p90 1.21%, MAX 4.75% @ 2026-01 —
+  level-splicing across the seam is banned; cross-check every live month vs
+  Pink Sheet monthly average (flag |dev| > 1%).
+  Fix-grade paid continuation (metals-api / MetalPriceAPI / EODHD XAU.USD,
+  ~$20-50/mo) deferred until a verdict hinges on fix-vs-proxy fidelity.
+
 Sources (verified reachable 2026-10-12 unless noted):
   1. FRED  TB3MS          -> tb3ms_monthly.csv       3-mo T-bill discount rate, monthly, 1950 ->
   2. Yahoo ^SPX           -> spx_price_monthly.csv   S&P 500 price index, monthly close, 1984-12 ->
   3. Yahoo SPY            -> spy_tr_monthly.csv      adj close = dividend total-return proxy, 1993 ->
-  4. Yahoo GC=F           -> gold_monthly_gcf.csv    COMEX front-month gold futures close, 2000-09 ->
-  5. LBMA PM fix DAILY   -> lbma_pm_fix_daily.csv    PRIMARY gold, 1968-04 -> current;
-     (two independent public mirrors; month-end extraction = legit signals)
+  4. Yahoo GC=F           -> gold_monthly_gcf.csv    COMEX front-month close, monthly, 2000-09 ->
+     + GC=F daily        -> gold_daily_gcf.csv      daily basis/seam diagnostics
+  4b. Yahoo GLD           -> gld_tr_monthly.csv      adj close NAV total-return proxy, 2004-12 ->
+     + GLD daily         -> gld_daily.csv           LIVE EXTENSION leg of gold composite
+  5. LBMA PM fix DAILY   -> lbma_pm_fix_daily.csv    FROZEN HISTORY 1968-04 -> 2026-02-25
+     (forex-centuries mirror; upstream dead since Feb-2026; file re-fetched is
+     expected-unchanged — verify sha256 above; month-end extraction = signals)
   5b. LBMA fix (FRED-    -> lbma_pm_fix_fred_mirror.csv  cross-check mirror, 1968-04 -> 2019-02
       era dump)                                        (agrees with #5 at 0.0004% mean dev)
   6. World Bank Pink     -> CMO-Historical-Data-Monthly.xlsx  monthly avg gold USD/oz, 1960M1 ->
@@ -30,14 +52,13 @@ Retired / blocked sources (verified 2026-10-12, do not chase):
     (dataset page 404; catalog 'metals' empty; API key useless; NDLC's WAF
     separately blocks /api/v3/datasets/ from datacenter IPs for all
     publishers). Paid successor LBMTD = OTC volumes, not price.
-  - WORKING daily fixes = third-party public mirrors (see source #5):
-    https://github.com/unbalancedparentheses/forex-centuries (data/sources/
-    lbma/lbma_gold_daily.csv, USD PM column) and a FRED-era GOLDPMGBD228NLBM
-    dump. Triple-validated 2026-10-12: mirrors agree 0.0004% mean dev over
-    12,776 shared days (1 outlier: 1968-05-16, 41.25 vs 42.25); daily->
-    monthly means vs Pink Sheet median 0.06% (>1% only in the known
-    fix-distortion months Dec-1980/Jul-1983/Mar-1985); month-end vs GC=F
-    median 0.36% (spot-vs-futures basis, to 5% in the Jan-2026 vol regime).
+  - The public daily-fix mirror era ENDED 2026-02: forex-centuries' weekly CI
+    pulls prices.lbma.org.uk/json/gold_pm.json (their scripts/update_sources.py
+    update_lbma); the wall killed it — last row 2026-02-25, last commit
+    2026-02-26. No maintained free daily-fix feed exists anywhere (datahub's
+    core/gold-prices likewise fell back to Pink Sheet monthly averages).
+  - WORKING daily fixes = ONLY the frozen mirror snapshot (see #5, sha-pinned).
+    Post-2026-02 gold price = GLD/GC=F per composite rule above.
   - prices.lbma.org.uk/json/*: Incapsula JS wall (403, incl. from a real browser).
   - stooq.com CSVs: JS proof-of-work challenge (curl); "Access denied" from datacenter IPs.
 
@@ -68,6 +89,8 @@ def get(url, headers=None):
 
 def yahoo_monthly(symbol, field="adjclose"):
     """Return list of (YYYY-MM-01, close) month-end rows from Yahoo chart API."""
+    import time
+    time.sleep(2)  # Yahoo 429-throttles bursts from datacenter IPs
     url = (
         "https://query1.finance.yahoo.com/v8/finance/chart/"
         f"{urllib.request.quote(symbol)}?range=max&interval=1mo"
@@ -121,6 +144,51 @@ def fetch_yahoo(symbol, fname, field, data_dir):
     return len(rows)
 
 
+def fetch_yahoo_daily(symbol, fname, data_dir):
+    """Daily closes, fetched in 5-year chunks — Yahoo silently DOWNGRADES
+    range=max&interval=1d to monthly bars for some symbols (observed
+    2026-10-12), so chunk with period1/period2 and stitch. Gold LIVE
+    EXTENSION legs (GLD) and GC=F basis diagnostics."""
+    import datetime as _dt
+    import time
+    base = "https://query1.finance.yahoo.com/v8/finance/chart/" + \
+        urllib.request.quote(symbol)
+    rows, seen = [], set()
+    start = 2000
+    this = _dt.datetime.now(_dt.timezone.utc).year + 1
+    for y0 in range(start, this, 5):
+        p1 = int(_dt.datetime(y0, 1, 1, tzinfo=_dt.timezone.utc).timestamp())
+        p2 = int(_dt.datetime(min(y0 + 5, this), 1, 1, tzinfo=_dt.timezone.utc).timestamp())
+        time.sleep(2)
+        data = json.loads(get(f"{base}?period1={p1}&period2={p2}&interval=1d")
+                          .decode("utf-8"))
+        r = data["chart"]["result"][0]
+        res = r.get("timestamp")
+        if not res:
+            continue
+        cl = r["indicators"]["quote"][0]["close"]
+        # guard against a silent interval downgrade: reject chunks whose
+        # median spacing is > 5 days (monthly bars would be ~30)
+        span = [b - a for a, b in zip(res, res[1:])] or [1]
+        span.sort()
+        if span[len(span) // 2] > 5 * 86400:
+            raise ValueError(f"{symbol} {y0}: Yahoo returned non-daily bars")
+        for t, v in zip(r["timestamp"], cl):
+            if v is None:
+                continue
+            try:
+                v = float(v)
+            except (TypeError, ValueError):
+                continue
+            d = _dt.datetime.fromtimestamp(t, _dt.timezone.utc).strftime("%Y-%m-%d")
+            if d not in seen:
+                seen.add(d)
+                rows.append((d, round(v, 6)))
+    rows.sort()
+    write_csv(os.path.join(data_dir, fname), ["date", "close"], rows)
+    return len(rows)
+
+
 PINK_SHEET_URL = ("https://thedocs.worldbank.org/en/doc/"
                   "74e8be41ceb20fa0da750cda2f6b9e4e-0050012026/related/"
                   "CMO-Historical-Data-Monthly.xlsx")
@@ -133,18 +201,23 @@ LBMA_FRED_MIRROR_URL = ("https://raw.githubusercontent.com/Prerna11071997/"
 
 
 def fetch_lbma_mirror(data_dir):
-    """PRIMARY gold: daily LBMA PM fix USD (col `gold_pm_usd`), 1968-04-01 ->
-    current, from the forex-centuries repo mirror. Month-end extraction =
-    last row of each month. Validation vs FRED dump / Pink Sheet / GC=F is in
-    this file's header (triple-checked 2026-10-12). If the URL 404s, re-grab
-    from the repo tree; cross-check against lbma_pm_fix_fred_mirror.csv and
-    the Pink Sheet monthly means before trusting any replacement."""
+    """FROZEN HISTORY gold: daily LBMA PM fix USD (col `gold_pm_usd`),
+    1968-04-01 -> 2026-02-25 ONLY (upstream walled; mirror repo dead since
+    Feb-2026). Re-fetch must reproduce sha256 86057834bd6fca539749f150a42255e2
+    8c4cf0fac2935b265b1c13e826fb24d9 — if it differs, STOP: the frozen history
+    changed under us. Post-2026-02 gold comes from GLD/GC=F per the composite
+    rule in this file's header (canonical: wiki entities/lbma-gold-price.md)."""
+    import hashlib
     raw = get(LBMA_MIRROR_URL).decode("utf-8", "replace")
     path = os.path.join(data_dir, "lbma_pm_fix_daily.csv")
     with open(path, "w") as f:
         f.write(raw)
+    sha = hashlib.sha256(raw.encode()).hexdigest()
     n = raw.strip().count("\n")
-    print(f"  wrote {path} ({n} rows)")
+    expect = "86057834bd6fca539749f150a42255e28c4cf0fac2935b265b1c13e826fb24d9"
+    if sha != expect:
+        print(f"  WARNING: frozen-history sha mismatch: {sha} (expected {expect[:16]}…)")
+    print(f"  wrote {path} ({n} rows, sha256={sha[:16]})")
     return n
 
 
@@ -235,6 +308,9 @@ def report():
         "yahoo_gcf": probe(
             "https://query1.finance.yahoo.com/v8/finance/chart/GC%3DF?range=max&interval=1mo",
             "Yahoo GC=F"),
+        "yahoo_gld": probe(
+            "https://query1.finance.yahoo.com/v8/finance/chart/GLD?range=max&interval=1mo",
+            "Yahoo GLD"),
         "shiller": probe("http://www.econ.yale.edu/~shiller/data/ie_data.xls",
                          "Shiller ie_data.xls"),
         "pink_sheet": probe(PINK_SHEET_URL, "World Bank Pink Sheet (monthly)"),
@@ -262,6 +338,9 @@ def main():
         ("^SPX", lambda: fetch_yahoo("^SPX", "spx_price_monthly.csv", "close", d)),
         ("SPY", lambda: fetch_yahoo("SPY", "spy_tr_monthly.csv", "adjclose", d)),
         ("GC=F", lambda: fetch_yahoo("GC=F", "gold_monthly_gcf.csv", "close", d)),
+        ("GC=F daily", lambda: fetch_yahoo_daily("GC=F", "gold_daily_gcf.csv", d)),
+        ("GLD", lambda: fetch_yahoo("GLD", "gld_tr_monthly.csv", "adjclose", d)),
+        ("GLD daily", lambda: fetch_yahoo_daily("GLD", "gld_daily.csv", d)),
         ("Shiller", lambda: fetch_shiller(d)),
         ("LBMA PM fix", lambda: fetch_lbma_mirror(d)),
         ("LBMA FRED mirror", lambda: fetch_lbma_fred_mirror(d)),

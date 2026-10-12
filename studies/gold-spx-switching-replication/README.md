@@ -12,6 +12,18 @@ Signals run on month-END FIXES — protocol-consistent. Pink Sheet monthly
 averages kept as cross-check only (an average smooths intra-month paths and
 shifts crossover dates — it does not generate legit signals).
 
+
+## 2026-10-12 DATA AMENDMENT (supersedes gold-source text below)
+
+The LBMA daily-fix mirror this study was seeded on FROZE at 2026-02-25 — its
+upstream (prices.lbma.org.uk/json) is bot-walled and every public mirror died
+with it; free live fix data no longer exists. Gold leg is now a COMPOSITE per
+wiki entities/lbma-gold-price.md: frozen fix history 1968-04->2026-02 (sha256
+86057834bd6fca53…) + seam-normalized GLD total-return live extension, GC=F
+month-ends second opinion, Pink Sheet monthly-average cross-check. Signals on
+within-series returns only — no level splicing (measured GC=F-vs-fix month-end
+basis: median 0.36%, max 4.75% @ 2026-01). Fetch script updated (adds GLD +
+daily legs; chunked Yahoo daily to dodge a silent monthly-downgrade bug).
 ## Disclosure block (required before any number is published)
 
 - **Universe:** gold (month-end LBMA PM fix 1968→, extracted from the daily
