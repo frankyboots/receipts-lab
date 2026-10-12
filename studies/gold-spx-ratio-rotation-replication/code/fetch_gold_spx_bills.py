@@ -32,6 +32,10 @@ Retired / blocked sources (verified 2026-10-12, do not chase):
     (curl, python, browser-impersonating TLS, and a real browser all get the Incapsula 403).
     Run this fetch once from an unblocked network (e.g. residential) and place
     lbma_gold_raw.csv under data/ if you land on a blocked host.
+    The official client (pip nasdaq-data-link, module `nasdaqdatalink`) does NOT
+    help: it hits the same /api/v3/datasets/ paths, same WAF 403 (verified
+    2026-10-12). The block is path+IP scoped: /datatable/ and /bulkdownloads/
+    paths pass, /datasets/ does not — even for public datasets (FRED/TB3MS).
 
 Stdlib only (urllib/json/csv) — pandas/xlrd are analysis-time deps (see requirements.txt).
 """
