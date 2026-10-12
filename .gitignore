@@ -1,0 +1,14 @@
+# Data and outputs stay out of git (see README rules)
+data/
+outputs/
+*.parquet
+*.h5
+*.feather
+*.sqlite
+*.db
+.env
+.venv/
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+.DS_Store
