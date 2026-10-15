@@ -67,12 +67,20 @@ unblocks the gate: `verify_data.py` green ⇒ the STUDY SPEC may be rendered
 - **DFX-5**
   - **intent:** the system can prove the remediation landed — re-fetch all
     study data with the fixed script, re-run the validation battery to green,
-    and re-record the validation section with re-derived numbers
+    re-record the validation section with re-derived numbers, and populate an
+    EMPTY data dir in a single pass (the monthly backfill never reads an absent
+    daily leg as a both-legs gap), so the sibling seeds' first post-DFX fetch
+    needs one run
   - **success:** `code/verify_data.py` (offline) exits 0 on re-fetched `data/`
     with all pre-existing passing checks intact; README §"Data validation"
     updated to the PASS record; fetch-header corrections applied (TB3MS span
     "1950 →"→"1934-01", basis count 260→304); README Engine line corrected to
-    Python 3.11.16 (pandas 3.0.6 / xlrd 2.0.2 / openpyxl 3.1.5 unchanged)
+    Python 3.11.16 (pandas 3.0.6 / xlrd 2.0.2 / openpyxl 3.1.5 unchanged);
+    fresh-path: one pass into an empty SCRATCH dir leaves no `FAILURES:` entry
+    for a daily-backed job (GC=F, GC=F daily, GLD, GLD daily) and writes
+    `gold_monthly_gcf.csv` complete for its own span (314/314 today), while the
+    DFX-2 both-legs-gap fixture still raises (guard strictness unchanged);
+    post-DFX fetch-script sha256 recorded in DECISIONS.md as the family pin
 
 ## Constraints
 
@@ -97,6 +105,14 @@ unblocks the gate: `verify_data.py` green ⇒ the STUDY SPEC may be rendered
 - A month missing from BOTH the monthly payload and the daily leg aborts the
   fetch loudly — never a hole, never an interpolated guess (synthetic unit
   test).
+- Fresh-path (empty data dir) requirement, effective DFX-5 (DECISIONS
+  2026-10-15 `| constraint |`, Frank directive "fold the gold issue into
+  dfx-5"): one pass into an empty data dir clears every daily-backed symbol's
+  monthly file — an absent daily leg on disk is never proof that a month is a
+  genuine both-legs gap, and a second run must never be required. The
+  both-legs-gap abort above keeps full strictness for a month absent from the
+  payload AND from a daily leg that IS on disk; nothing is ever interpolated
+  to make the fresh pass succeed.
 - Pinned mechanism (DECISIONS DFX-4): SPX monthly bars come from a chunked
   DAILY ^SPX fetch + month-end resample — the daily leg verified complete
   2026-10-15 (10,780 rows, no downgrades); the Yahoo `range=max` quarterly
@@ -137,6 +153,7 @@ unblocks the gate: `verify_data.py` green ⇒ the STUDY SPEC may be rendered
 | FRED CSV contains `.` placeholder rows | kept as served; coerced at read; never silently rewritten | battery `claim:C8 tb3ms span` (existing, stays green) |
 | Running month's partial (MTD) row | written exactly once post-dedupe; remains flagged MTD for analysis-time drop | DFX-1 unit test; (A) hazard note stays report-only |
 | Sibling dirs (`data/` empty, shared script) | no fetch anywhere until DFX-5 lands; post-DFX sha pinned for all 4 | family constraint; sibling seeds cite the DECISIONS pin |
+| Symbol's daily leg absent from disk (fresh / empty data dir) | a single pass writes every daily leg and every daily-backed monthly file complete, with no `FAILURES:` entry for that symbol, and never reads leg-absence as a both-legs gap — no second run; once the leg IS on disk the both-legs-gap abort above keeps full strictness | DFX-5 done-checkpoint fresh-pass check (empty scratch dir, outside `data/` and outside sibling dirs) + DFX-2 both-legs-gap regression; HOW is DFX-5's choice (job ordering vs absent-leg semantics), so the DFX-2 absent-leg fixture may be re-pointed while the both-legs-gap fixture stays |
 
 </frozen-after-approval>
 
@@ -168,5 +185,9 @@ unblocks the gate: `verify_data.py` green ⇒ the STUDY SPEC may be rendered
    `claim:C6` PASS.
 5. **DFX-5** — depends on: DFX-1..4 — done-checkpoint: `verify_data.py`
    offline exit 0 on re-fetched `data/`; README PASS record written with
-   re-derived numbers; fetch-header + Engine corrections applied; post-DFX
-   fetch-script sha256 recorded in DECISIONS.md as the family pin.
+   re-derived numbers; fetch-header + Engine corrections applied; fresh-path
+   check: one pass into an empty scratch dir writes every daily-backed monthly
+   file complete (GC=F complete for its own span) with no `FAILURES:` entry
+   for GC=F / GC=F daily / GLD / GLD daily, and the DFX-2 both-legs-gap
+   fixture still aborts; post-DFX fetch-script sha256 recorded in DECISIONS.md
+   as the family pin (supersedes the pre-fix `854664c0…` for all 4 dirs).
