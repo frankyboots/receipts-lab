@@ -37,6 +37,21 @@ post-DFX sha is pinned in DECISIONS.md as the family's new shared reference —
 their first post-DFX fetch is a single pass into their empty `data/` (DFX-5
 fresh-path fix: daily legs are fetched before their monthly jobs).
 
+Independent review of the data-fix stage (2026-10-15, `receipts-lab-study-review`,
+4 adversarial layers over `8e20ffce..200e0ef`): **1 decision-needed, 3 patches,
+2 defers, 3 findings rejected** (roster + refutations in DECISIONS.md). Headline
+F1: every offline check was span-relative (each file's own min..max, inner
+joins) or head-only, so a payload truncated at either END passed the whole gate
+— six probes on scratch copies returned 22/22 exit 0. Fixed: battery §1b
+`anchor:first` / `anchor:last` pin the absolute first/last observation of every
+source against the README per-file table + the frozen matrix row
+`[first_date, PARTIAL]` (frozen sources pinned; upstream-lagged monthlies
+PARTIAL-1; live dailies within 10d). `claim:C9` is now unconditional (an
+unreadable Shiller file used to shrink the gate to 21 checks and still exit 0 —
+probe-verified), and the live chunked ^SPX fetch is wrapped (`live:spx chunk
+fetch`). All 17 perturbations now exit 1, including the 6 that were silent.
+Re-validated after the fixes: verdict **PASS — 24/24 checks, 0 open defects**.
+
 Per-file verdicts (re-derived from the DFX-5 re-fetch, 2026-10-15):
 
 | file | verdict | evidence |
@@ -52,7 +67,7 @@ Per-file verdicts (re-derived from the DFX-5 re-fetch, 2026-10-15):
 | gld_tr_monthly.csv | PASS | 263 mo complete 2004-12→2026-10, one row per month (DFX-1 dup removed); == daily month-ends 0.00000000% over 262 complete mo |
 | spy_tr_monthly.csv | PASS | 405 mo complete 1993-02→2026-10, one row per month (DFX-1 dup removed) |
 | gold_monthly_gcf.csv | PASS | **314/314 mo complete** 2000-09→2026-10 — 46 payload gaps (incl. composite seam 2026-02/2026-03) backfilled from the complete daily leg, byte-equal to the daily month-end; == daily month-ends 0.00000000% over 313 shared complete mo |
-| spx_price_monthly.csv | PASS | 514 rows 1984-01→2026-10, complete over its own span; values == month-end resample of the daily leg, 0 tolerance (513 complete mo); 342 non-quarter months present — the quarterly-downgrade signature is gone |
+| spx_price_monthly.csv | PASS | 514 rows 1984-01→2026-10, complete over its own span; values == month-end resample of the daily leg, 0 tolerance (513 complete mo); 342 non-quarter **complete** months present (343 rows incl. the running partial 2026-10) — the quarterly-downgrade signature is gone |
 | spx_daily.csv | PASS | 10,781 rows 1984-01-03→2026-10-15, clean (max gap 7d), no dups |
 
 Defect classes (all in the shared fetch script) — **all closed by DFX-1..4**:
@@ -124,10 +139,12 @@ Record corrections (applied at DFX-5):
 - README Engine "Python 3.14" → 3.11.16 (pandas 3.0.6 / xlrd 2.0.2 /
   openpyxl 3.1.5 unchanged) ✓ applied
 
-Gate status: **PASS** (22/22 offline checks on the re-fetched `data/`, 0 open
-defects; DFX-5 re-fetch + re-validation, 2026-10-15). The gate's green state
-unblocks the STUDY SPEC. Next: study spec (analysis caps). (A) hazards above
-are for that spec regardless of fix outcome.
+Gate status: **PASS** (24/24 offline checks on the re-fetched `data/`, 0 open
+defects; DFX-5 re-fetch + re-validation 2026-10-15, then the review's F1/F2/F5
+battery additions — §1b anchors, unconditional `claim:C9`, `live:spx chunk
+fetch` — re-validated green). The gate's green state unblocks the STUDY SPEC.
+Next: study spec (analysis caps). (A) hazards above are for that spec regardless
+of fix outcome. Review F6/F7 stay deferred; F3/F4 are applied.
 
 ## Disclosure block (required before any number is published)
 

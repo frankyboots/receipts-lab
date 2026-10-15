@@ -241,8 +241,14 @@ class FetchYahooGuardWiringTest(unittest.TestCase):
 class MainExitCodeTest(unittest.TestCase):
     """SPEC success: a quarterly payload 'exits non-zero' (unit test). The
     guard's MonthlyCoverageGuardAbort is a plain Exception, so main() maps it
-    to a failed job and exits 1 — proven here end-to-end with every other
-    job stubbed and the network layer returning a quarterly payload."""
+    to a failed job and exits 1. Review F4 (2026-10-15): this is NOT 'every
+    other job stubbed' — 7 of the 13 jobs are mocked, and in this scenario
+    four unstubbed jobs fail too (^SPX via the daily-chunk downgrade
+    ValueError, SPY via the DFX-3 guard, GC=F and GLD via the DFX-2
+    both-legs abort), so the assertion below proves 'exit != 0 and no spx
+    monthly file was written', not the guard alone. fetch_yahoo_daily is
+    stubbed here, so fetch_spx_monthly's own DFX-3 backstop has no
+    main()-level test (its wiring test is FetchYahooGuardWiringTest)."""
 
     def test_main_exits_nonzero_when_quarterly_payload_reaches_monthly_file(self):
         with tempfile.TemporaryDirectory() as tmp:

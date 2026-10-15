@@ -36,6 +36,16 @@ Validation 2026-10-15 verdicts this battery encodes:
       drop the anomalous final Shiller row); GC=F-vs-fix month-end basis
       median 0.36% / max 4.75% @ 2026-01; current partial month = MTD
       snapshot, drop at analysis time; SPY adjclose ppm-scale anchor drift.
+  ANCHORS (2026-10-15 review F1): section 1b pins the ABSOLUTE first/last
+      observation of every source. Before it, every offline check was
+      span-relative (struct:*, claim:C6, all inner joins) or head-only
+      (claim:C8/C9), so a series truncated at either end passed the whole gate
+      (6 review probes on scratch copies: 22/22 PASS exit 0). anchor:first +
+      anchor:last close that. F2 made claim:C9 unconditional (an unreadable
+      Shiller file used to shrink the gate to 21 checks and still exit 0);
+      F5 wrapped the live chunked ^SPX fetch (a Yahoo blip used to abort the
+      whole --live run as a traceback) and reports live:spx chunk fetch.
+      F6/F7 (review) stay deferred, see DECISIONS.md.
 """
 import argparse
 import hashlib
@@ -119,6 +129,91 @@ def structural(D):
     fm = s["lbma_pm_fix_fred_mirror.csv"]
     note("fred-mirror placeholders", f"{int((fm[fm.columns[1]].astype(str) == '.').sum())} '.' days in the FRED-era dump (source property; excluded from dev stats)")
     return s
+
+
+def anchors(D):
+    P("=" * 20, "1b. ABSOLUTE ANCHORS (series start/end)", "=" * 20)
+    # F1 (review 2026-10-15). Every other offline check is span-relative
+    # (struct:* = the file's own min..max, claim:C6, every inner join) or
+    # head-only (claim:C8 = 1934-01, claim:C9 = 1871-01), so deletion at
+    # EITHER end of a series passed the whole gate: review probes on scratch
+    # copies of data/ (spx minus 1984-1999, spx minus 2020-2026, gld legs
+    # minus 2024-, eco3min minus 2015-, tb3ms last 36 rows, gcf monthly minus
+    # 2000-09..2005-12) all returned 22/22 PASS exit 0. These two checks pin
+    # both ends absolutely, so a truncated payload is a DEFECT.
+    # first observation source: the README per-file table (DFX-5 re-fetch
+    # record). End rule source: the frozen matrix row "post-fix files pass
+    # with every month of [first_date, PARTIAL] present" (SPEC.md:152) — live
+    # daily legs must carry a bar within RECENT_DAYS of today (the fetch
+    # always writes through the last session), monthly files must reach
+    # PARTIAL, sources that lag one month upstream (FRED TB3MS, Pink Sheet)
+    # are allowed PARTIAL-1, and the frozen sources (sha-pinned LBMA fix,
+    # FRED-era dump, Shiller as served) are pinned to their recorded last
+    # observation. NOTE: this makes the battery time-aware by design — data
+    # that has not been refreshed for the month under analysis reports STALE.
+    RECENT_DAYS = 10
+    today = dt.datetime.now(dt.timezone.utc).date()
+    prev = PARTIAL - 1
+    # file, first observation (as stored), end rule
+    #   "partial" = must reach PARTIAL | "prev" = must reach >= PARTIAL-1
+    #   ("last", d) = frozen, pin the exact last observation
+    #   ("recent", n) = last bar within n calendar days
+    roster = [
+        ("lbma_pm_fix_daily.csv",       "1968-04-01", ("last", "2026-02-25")),
+        ("lbma_pm_fix_fred_mirror.csv", "1968-04-01", ("last", "2019-02-08")),
+        ("gold_monthly_eco3min.csv",    "1960-01-01", "prev"),
+        ("tb3ms_monthly.csv",           "1934-01-01", "prev"),
+        ("gld_daily.csv",               "2004-11-18", ("recent", RECENT_DAYS)),
+        ("gold_daily_gcf.csv",          "2000-08-30", ("recent", RECENT_DAYS)),
+        ("spx_daily.csv",               "1984-01-03", ("recent", RECENT_DAYS)),
+        ("gld_tr_monthly.csv",          "2004-12-01", "partial"),
+        ("spy_tr_monthly.csv",          "1993-02-01", "partial"),
+        ("gold_monthly_gcf.csv",        "2000-09-01", "partial"),
+        ("spx_price_monthly.csv",       "1984-01-01", "partial"),
+    ]
+    obs = []
+    for name, first, rule in roster:
+        df = load(D, name)
+        d = df[df.columns[0]]
+        obs.append((name, first, str(d.iloc[0].date()), d.iloc[-1], rule))
+    # Pink Sheet xlsx: same span contract as eco3min it feeds (claim:C5 pins
+    # the values month-by-month; a truncated book would shrink that join)
+    try:
+        xl = pd.read_excel(f"{D}/CMO-Historical-Data-Monthly.xlsx",
+                           sheet_name="Monthly Prices", header=4)
+        xc = xl[xl.columns[0]].astype(str)
+        xc = xc[xc.str.match(r"^\d{4}M\d{2}$")]
+        p0, p1 = (pd.Period(f"{v[:4]}-{v[5:7]}", "M") for v in (xc.iloc[0], xc.iloc[-1]))
+        obs.append(("CMO-Historical-Data-Monthly.xlsx", "1960-01", str(p0), p1, "prev"))
+    except Exception as e:  # noqa: BLE001
+        obs.append(("CMO-Historical-Data-Monthly.xlsx", "1960-01",
+                    f"UNREADABLE ({type(e).__name__}: {e})", None, "prev"))
+    bad0, bad1 = [], []
+    for name, first, got0, last, rule in obs:
+        if got0 != first:
+            bad0.append(f"{name}: first={got0} expected={first}")
+        if last is None:
+            bad1.append(f"{name}: unreadable, end unverifiable")
+            continue
+        if isinstance(rule, tuple) and rule[0] == "recent":
+            ok, want = (today - last.date()).days <= rule[1], f"last bar within {rule[1]}d of {today}"
+        elif isinstance(rule, tuple):
+            ok, want = str(last.date()) == rule[1], f"pinned to {rule[1]} (frozen source)"
+        else:
+            p = last if isinstance(last, pd.Period) else last.to_period("M")
+            if rule == "partial":
+                ok, want = p == PARTIAL, f"reaches {PARTIAL}"
+            else:
+                ok, want = p >= prev, f"reaches >= {prev}"
+        if not ok:
+            bad1.append(f"{name}: last={last} want {want}")
+    chk("anchor:first series start", not bad0,
+        f"{len(obs)} sources pinned to their recorded first observation — "
+        + ("; ".join(bad0) if bad0 else "all match"))
+    chk("anchor:last series end", not bad1,
+        f"PARTIAL={PARTIAL} — " + ("; ".join(bad1) if bad1 else
+        f"all {len(obs)} sources at their expected end (frozen pinned; "
+        f"upstream-lagged monthlies >= {prev}; live dailies within {RECENT_DAYS}d)"))
 
 
 def claims(D, s):
@@ -240,10 +335,20 @@ def claims(D, s):
         f"first={tb[tb.columns[0]].iloc[0].date()} rows={len(tb)} (fetch header corrected to "
         f"'1934-01' at DFX-5; the earlier '1950 ->' was wrong)")
     sh_rows = shiller_read(D)
-    if sh_rows is not None:
-        chk("claim:C9 shiller span", sh_rows.index.min() == pd.Period("1871-01", "M"),
-            f"decoded {len(sh_rows)} rows {sh_rows.index.min()}..{sh_rows.index.max()}; "
-            f"final served row P={sh_rows['P'].iloc[-1]} (anomalous, see hazards)")
+    # F2 (review 2026-10-15): this check was registered only `if sh_rows is
+    # not None`, so an unreadable/absent shiller_ie_data.xls silently shrank
+    # the gate to 21 checks and still exited 0 (probe: zero-length file ->
+    # 21/21 PASS) while the README records a PASS verdict for the file. It is
+    # now unconditional and pins BOTH ends (the head and the frozen final
+    # served row 2023-09), so a Shiller re-vintage is a DEFECT too.
+    chk("claim:C9 shiller span", sh_rows is not None
+        and sh_rows.index.min() == pd.Period("1871-01", "M")
+        and sh_rows.index.max() == pd.Period("2023-09", "M"),
+        (f"decoded {len(sh_rows)} rows {sh_rows.index.min()}..{sh_rows.index.max()} "
+         f"(frozen as served, ends 2023-09); final served row P={sh_rows['P'].iloc[-1]} "
+         f"(anomalous, see hazards)")
+        if sh_rows is not None else
+        "shiller_ie_data.xls unreadable/absent — the entire Shiller leg is UNVERIFIED")
 
     # C10 GLD monthly == daily month-ends (claim: 0.0%)
     gldd = s["gld_daily.csv"]
@@ -390,15 +495,26 @@ def live_yahoo(D, s):
         note("live ^SPX quarterly payload",
              f"fetch failed ({type(e).__name__}: {e}); report-only — the daily leg check below is the check")
     # ^SPX daily ground truth (chunked, downgrade-tracked) + Shiller P decode
+    # F5 (review 2026-10-15): this was the only live fetch outside a
+    # try/except, so one Yahoo blip aborted the whole --live run as a
+    # traceback with no verdict summary and every later live check skipped.
+    # A failed chunk is now collected, reported as its own check, and the leg
+    # is refused a green verdict (a short fresh leg would otherwise shrink the
+    # inner join below and pass silently — the live form of F1).
     rows = []
     downgraded = []
+    chunk_errs = []
     this = dt.datetime.now(dt.timezone.utc).year + 1
     for y0 in range(1984, this, 5):
         time.sleep(2)
         p1 = int(dt.datetime(y0, 1, 1, tzinfo=dt.timezone.utc).timestamp())
         p2 = int(dt.datetime(min(y0 + 5, this), 1, 1, tzinfo=dt.timezone.utc).timestamp())
-        r = _get_json("https://query1.finance.yahoo.com/v8/finance/chart/%5ESPX"
-                      f"?period1={p1}&period2={p2}&interval=1d")["chart"]["result"][0]
+        try:
+            r = _get_json("https://query1.finance.yahoo.com/v8/finance/chart/%5ESPX"
+                          f"?period1={p1}&period2={p2}&interval=1d")["chart"]["result"][0]
+        except Exception as e:  # noqa: BLE001
+            chunk_errs.append(f"{y0}: {type(e).__name__}: {e}")
+            continue
         ts = r.get("timestamp") or []
         cl = r["indicators"]["quote"][0]["close"]
         if len(ts) >= 2:
@@ -407,6 +523,9 @@ def live_yahoo(D, s):
                 downgraded.append(y0)
         rows += [(dt.datetime.fromtimestamp(t, dt.timezone.utc).strftime("%Y-%m-%d"), round(float(v), 6))
                  for t, v in zip(ts, cl) if v is not None]
+    chk("live:spx chunk fetch", not chunk_errs and bool(rows),
+        f"chunks ok={len(range(1984, this, 5)) - len(chunk_errs)}/{len(range(1984, this, 5))}, "
+        f"fresh rows={len(rows)}" + (f"; FAILED {chunk_errs}" if chunk_errs else ""))
     sd = pd.DataFrame(rows, columns=["date", "close"])
     sd["date"] = pd.to_datetime(sd["date"])
     sd = sd.drop_duplicates("date").sort_values("date")
@@ -513,6 +632,7 @@ def main():
     ap.add_argument("data_dir", nargs="?", default="data")
     a = ap.parse_args()
     s = structural(a.data_dir)
+    anchors(a.data_dir)
     claims(a.data_dir, s)
     if a.live:
         live_yahoo(a.data_dir, s)
