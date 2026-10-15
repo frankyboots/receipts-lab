@@ -28,59 +28,78 @@ daily legs; chunked Yahoo daily to dodge a silent monthly-downgrade bug).
 
 Battery: `code/verify_data.py` (read-only on `data/`; offline by default,
 `--live` re-fetches every source; exit 1 while open defects exist). First full
-gate run. Verdict: **FAIL — 4 fetch-path (F) defects, 0 (S)**. The fetch script
-is SHARED by the 3 sibling studies (identical sha `854664c0…`, their `data/`
-still empty) — fix once via §8 data-fix SPEC, re-fetch all, revalidate; do not
-fetch siblings until the DFX fix lands.
+gate run (2026-10-15): **FAIL — 4 fetch-path (F) defects, 0 (S)**, all in the
+SHARED fetch script. All four closed via the §8 data-fix SPEC (DFX-1..4); DFX-5
+re-fetched all study data with the fixed script and re-validated: verdict
+**PASS — 22/22 checks, 0 open defects** (offline battery on the re-fetched
+`data/`, 2026-10-15). The fetch script is shared by the 3 sibling studies; its
+post-DFX sha is pinned in DECISIONS.md as the family's new shared reference —
+their first post-DFX fetch is a single pass into their empty `data/` (DFX-5
+fresh-path fix: daily legs are fetched before their monthly jobs).
 
-Per-file verdicts:
+Per-file verdicts (re-derived from the DFX-5 re-fetch, 2026-10-15):
 
 | file | verdict | evidence |
 |---|---|---|
-| lbma_pm_fix_daily.csv | PASS | frozen 1968-04-01→2026-02-25, 14,544 rows, clean (max gap 7d); sha256 pin **MATCH** on live re-download |
+| lbma_pm_fix_daily.csv | PASS | frozen 1968-04-01→2026-02-25, 14,544 rows, clean (max gap 7d); sha256 pin **MATCH** on live re-download; last fix 5191.55 @ 2026-02-25 |
 | lbma_pm_fix_fred_mirror.csv | PASS | mean dev vs primary 0.0004% over 12,776 common days (claim 0.0004% ✓); 494 `.` placeholders = source property; single-day disagreement 1968-05-16 (41.25 vs 42.25) |
-| gold_monthly_eco3min.csv | PASS | 801 mo complete 1960-01→2026-09; == Pink Sheet xlsx to 0.000000%; live re-download byte-identical |
-| CMO-Historical-Data-Monthly.xlsx | PASS | == eco3min over all 801 shared months; live re-download byte-identical |
-| shiller_ie_data.xls | PASS | P decoded 1871-01→2023-09; P = monthly AVERAGE of daily closes, exact 12/12 mo (2022-09→2023-08); final served row 2023-09 anomalous (+2.42% vs true Sep mean) — drop it; file frozen as served |
-| tb3ms_monthly.csv | PASS | complete 1934-01→2026-09, no gaps (fetch header's "1950 →" is WRONG — fix with DFX); live re-fetch: fresh FRED pull value-identical on all 1,113 shared months (0 mismatches, max dev 0.0, both end 2026-09; bytes differ only in the renamed header), pulled during the pre-outage window after which FRED's edge went dark from this host |
-| gld_daily.csv | PASS | clean, max gap 5d, no dups |
-| gold_daily_gcf.csv | PASS | clean, max gap 5d, no dups |
-| gld_tr_monthly.csv | (F1) | dup running month (2026-10 ×2, both intraday snapshots); values otherwise == daily month-ends 0.00000000% over 262 mo |
-| spy_tr_monthly.csv | (F1) | dup running month ×2; otherwise complete 405 mo |
-| gold_monthly_gcf.csv | (F1)+(F2) | **46/314 months MISSING** (silent None-close drop) incl. composite seam months 2026-02, 2026-03; dup running month; stored values == daily month-ends 0.00000000% (267 shared mo) — values fine, coverage broken |
-| spx_price_monthly.csv | (F3)+(F4) | **169 rows over 503-month span**: Yahoo serves `^SPX` as QUARTER-end bars only via `range=max` monthly (reproduced live twice on 2026-10-15) stored under a monthly name; values = close of the 3-month window STARTING at the label (167/168 exact vs daily closes) — mislabeled AND sparse, unusable as monthly closes |
+| gold_monthly_eco3min.csv | PASS | 801 mo complete 1960-01→2026-09; == Pink Sheet xlsx to 0.000000%; re-download byte-identical |
+| CMO-Historical-Data-Monthly.xlsx | PASS | == eco3min over all 801 shared months; re-download byte-identical |
+| shiller_ie_data.xls | PASS | P decoded 1871-01→2023-09 (1,833 rows); P = monthly AVERAGE of daily closes (first-gate live check; today's re-download byte-identical); final served row 2023-09 anomalous (+2.42% vs true Sep mean) — drop it; file frozen as served |
+| tb3ms_monthly.csv | PASS | complete 1,113 mo 1934-01→2026-09, no gaps; `.` placeholders kept as served, coerced at read |
+| gld_daily.csv | PASS | 5,511 rows 2004-11-18→2026-10-15, clean (max gap 5d), no dups |
+| gold_daily_gcf.csv | PASS | 6,557 rows 2000-08-30→2026-10-15, clean (max gap 5d), no dups |
+| gld_tr_monthly.csv | PASS | 263 mo complete 2004-12→2026-10, one row per month (DFX-1 dup removed); == daily month-ends 0.00000000% over 262 complete mo |
+| spy_tr_monthly.csv | PASS | 405 mo complete 1993-02→2026-10, one row per month (DFX-1 dup removed) |
+| gold_monthly_gcf.csv | PASS | **314/314 mo complete** 2000-09→2026-10 — 46 payload gaps (incl. composite seam 2026-02/2026-03) backfilled from the complete daily leg, byte-equal to the daily month-end; == daily month-ends 0.00000000% over 313 shared complete mo |
+| spx_price_monthly.csv | PASS | 514 rows 1984-01→2026-10, complete over its own span; values == month-end resample of the daily leg, 0 tolerance (513 complete mo); 342 non-quarter months present — the quarterly-downgrade signature is gone |
+| spx_daily.csv | PASS | 10,781 rows 1984-01-03→2026-10-15, clean (max gap 7d), no dups |
 
-Defect classes (all in the shared fetch script → §8 data-fix SPEC, DFX-1..4):
-- **F1** monthly fetcher: no dedupe — Yahoo returns the running month twice with
-  different intraday snapshots (mechanism reproduced live: GC=F 4107.9/4166.3).
-- **F2** monthly fetcher: silent None-close drop, no guard (GC=F lost 46 months,
-  exactly where the seam needed them). Month-ends reconstructable from the
-  complete daily leg; fix = backfill-from-daily or loud guard.
-- **F3** no per-file monthly coverage guard — quarterly bars silently stored
-  under a monthly name. Guard must be per-file, not per-fetch-run (ETF/futures
-  monthly bars were complete).
-- **F4** ^SPX quarterly bar values mislabeled (+2-month window shift). Verified
-  fix route: chunked daily fetch (10,780 rows, no downgrades) → month-end resample.
+Defect classes (all in the shared fetch script) — **all closed by DFX-1..4**:
+- **F1** (DFX-1) monthly fetcher: no dedupe — Yahoo returns the running month
+  twice with different intraday snapshots (mechanism reproduced live:
+  GC=F 4107.9/4166.3). Closed: `dedupe_monthly()` keeps exactly one row per
+  month, last occurrence wins. Evidence: dup scan 0 on gld/spy/gcf monthlies
+  in this run's battery.
+- **F2** (DFX-2) monthly fetcher: silent None-close drop, no guard (GC=F lost
+  46 months, exactly where the seam needed them). Closed: payload month-gaps
+  backfilled from the same symbol's complete daily leg; a month missing from
+  BOTH legs aborts the fetch loudly before any write. Evidence:
+  gold_monthly_gcf 314/314; the both-legs-gap fixture re-run at DFX-5 still
+  aborts (guard strictness unchanged).
+- **F3** (DFX-3) no per-file monthly coverage guard — quarterly bars silently
+  stored under a monthly name. Closed: per-file guard (gap >2 consecutive
+  months OR coverage <80% of the file's own span) aborts before every
+  payload-derived monthly-file write.
+- **F4** (DFX-4) ^SPX quarterly bar values mislabeled (+2-month window shift).
+  Closed: `spx_price_monthly.csv` is the month-end resample of the chunked
+  DAILY ^SPX leg (spx_daily.csv); the range=max quarterly payload can no
+  longer reach the monthly file on any path (DFX-3 guard is the backstop).
 
-Reproduced claims (all re-derived from stored bytes + live pulls, 2026-10-15):
+Reproduced claims (all re-derived from the re-fetched stored bytes, DFX-5 run
+2026-10-15):
 - frozen LBMA sha256 `86057834bd6fca53…` MATCH; span + last fix 5191.55 @ 2026-02-25 ✓
 - fix-vs-FRED-dump mean 0.0004% ✓ (12,776 days; 258 differ at all; max 2.37% = 1968-05-16 only)
 - fix monthly MEANS vs Pink Sheet: median 0.0649% (claim 0.06% ✓; max 10.58% @ 1980-12)
-- GC=F-vs-fix month-end basis, monthly-file leg: 260 mo, median 0.3579%, p90
-  1.2013%, max 4.7522% @ 2026-01 (claim 0.36%/1.21%/4.75% ✓). The "260" = the
-  gappy monthly file's coverage (itself F2); complete daily-leg basis = 304 mo,
-  median 0.3463%, p90 1.1789%, same max @ 2026-01.
+- GC=F-vs-fix month-end basis: **304 mo complete** (monthly file and daily leg
+  now agree), median 0.3463%, p90 1.1789%, max 4.7522% @ 2026-01
+  (claim 0.36%/1.21%/4.75% ✓). The old "260" = the gappy monthly file's own
+  coverage (F2); the complete daily-leg basis is 304 mo.
 - eco3min == xlsx 0.000000% ✓; GLD monthly == daily ME 0.00000000% ✓; GC=F
   monthly == daily ME 0.00000000% ✓
-- TB3MS vs fresh FRED pull: 1,113/1,113 months value-identical (0 mismatches);
-  all 5 static sources re-downloaded byte-identical (fan-out run 05:15 + parent
-  re-run — two independent confirmations each; FRED unreachable from this host
-  after ~05:17, timing out 0 bytes — transient, re-attempt via `--live`)
-- Shiller P = monthly average of dailies ✓; Shiller→Yahoo seam at 2023-09 mixes
+- SPX monthly == daily-leg month-end resample: 0.0 exactly over 513 complete
+  months (0 tolerance) ✓
+- TB3MS: 1,113/1,113 months complete, first = 1934-01-01 (the fetch header's
+  "1950 →" was WRONG — corrected in the DFX-5 header)
+- all 5 static sources re-downloaded byte-identical in the DFX-5 re-fetch
+  (lbma pin MATCH); FRED was reachable again at the re-fetch (the 2026-10-15
+  early-morning outage window was transient, as assumed)
+- Shiller P = monthly average of dailies ✓ (first-gate live check; today's
+  re-download byte-identical); Shiller→Yahoo seam at 2023-09 mixes
   average-vs-close measures (README already mandates level-normalized stitch + returns)
-- live: ^SPX quarterly downgrade AND dup-running-month both reproduced fresh;
-  GC=F/GLD monthly + daily interiors byte-stable; SPY interior shows only
-  ppm-scale adjclose anchor drift (max 0.000120% over 404 mo)
+- live: ^SPX quarterly downgrade AND dup-running-month reproduced fresh on the
+  first gate; after the DFX-4 rebuild both are gone from the production path
+  (the live `decode label+2` check passed at the DFX-4 checkpoint)
 
 **(A) hazards for the SPEC (Constraints + I/O matrix):**
 1. GLD leg is NAV-per-share — 2026-02 ME 483.75 vs fix 5191.55 (−90.7% level
@@ -98,13 +117,17 @@ Reproduced claims (all re-derived from stored bytes + live pulls, 2026-10-15):
 7. SPY adjclose anchor drift between snapshots is ppm-scale (≤0.000120%) —
    immaterial at signal precision.
 
-Record corrections surfaced by the gate: fetch header TB3MS span "1950 →" →
-actual 1934-01; README Engine "Python 3.14" → study venv is 3.11.16 (pandas
-3.0.6 / xlrd 2.0.2 / openpyxl 3.1.5 unchanged). Fix both with the DFX edit.
+Record corrections (applied at DFX-5):
+- fetch header TB3MS span "1950 →" → actual 1934-01 ✓ applied
+- fetch header basis count 260 → 304 mo (complete daily-leg basis: median
+  0.3463%, p90 1.1789%, max 4.7522% @ 2026-01) ✓ applied
+- README Engine "Python 3.14" → 3.11.16 (pandas 3.0.6 / xlrd 2.0.2 /
+  openpyxl 3.1.5 unchanged) ✓ applied
 
-Gate status: **FAIL** (open F1–F4). Next: §8 data-fix SPEC (DFX-1..4) → build →
-re-fetch → re-run this battery green → study spec. (A) hazards above are for
-that spec regardless of fix outcome.
+Gate status: **PASS** (22/22 offline checks on the re-fetched `data/`, 0 open
+defects; DFX-5 re-fetch + re-validation, 2026-10-15). The gate's green state
+unblocks the STUDY SPEC. Next: study spec (analysis caps). (A) hazards above
+are for that spec regardless of fix outcome.
 
 ## Disclosure block (required before any number is published)
 
@@ -128,7 +151,7 @@ that spec regardless of fix outcome.
   (level-normalized at seam); TR: Shiller dividends pre-1993, SPY adj close
   after; bills: FRED `TB3MS`.
 - **Costs:** 10 bps per switch on all rotation legs. No leverage.
-- **Engine:** Python 3.14 + pandas 3.0.6 + xlrd 2.0.2 + openpyxl 3.1.5
+- **Engine:** Python 3.11.16 + pandas 3.0.6 + xlrd 2.0.2 + openpyxl 3.1.5
   (`requirements.txt`);
   fetch script stdlib-only. Analysis scripts land in `code/`.
 

@@ -19,15 +19,15 @@ Composition rule for analysis:
   2026-03 ->          GLD total-return monthly as LIVE EXTENSION (primary);
                       GC=F month-end as second opinion
   splice = ratio-normalized at seam; run signals on WITHIN-SERIES RETURNS,
-  never raw spliced levels. Measured month-end GC=F-vs-fix basis
-  (2000-10..2026-01, 260 mo): median 0.36%, p90 1.21%, MAX 4.75% @ 2026-01 —
+  never raw spliced levels. Measured month-end GC=F-vs-fix basis (complete daily leg,
+ 2000-10..2026-01, 304 mo): median 0.3463%, p90 1.1789%, MAX 4.7522% @ 2026-01 —
   level-splicing across the seam is banned; cross-check every live month vs
   Pink Sheet monthly average (flag |dev| > 1%).
   Fix-grade paid continuation (metals-api / MetalPriceAPI / EODHD XAU.USD,
   ~$20-50/mo) deferred until a verdict hinges on fix-vs-proxy fidelity.
 
 Sources (verified reachable 2026-10-12 unless noted):
-  1. FRED  TB3MS          -> tb3ms_monthly.csv       3-mo T-bill discount rate, monthly, 1950 ->
+  1. FRED  TB3MS          -> tb3ms_monthly.csv       3-mo T-bill discount rate, monthly, 1934-01 ->
   2. Yahoo ^SPX           -> spx_price_monthly.csv   S&P 500 price index, month-END close, 1984-01 ->
      (DFX-4: BUILT FROM THE CHUNKED DAILY LEG BELOW — the range=max 1mo payload
      is silently quarterly-downgraded and its bars are +2-mo window-start
@@ -595,12 +595,16 @@ def main():
         ("TB3MS", lambda: fetch_fred_tb3ms(d)),
         ("^SPX", lambda: fetch_spx_monthly(d)),
         ("SPY", lambda: fetch_yahoo("SPY", "spy_tr_monthly.csv", "adjclose", d)),
+        # DFX-5 fresh-path: each daily leg is fetched BEFORE its monthly job,
+        # so a single pass into an EMPTY data dir has the legs on disk before
+        # the DFX-2 backfill reads them — absent-leg is never read as a
+        # both-legs gap (a leg that IS on disk keeps full abort strictness).
+        ("GC=F daily", lambda: fetch_yahoo_daily("GC=F", "gold_daily_gcf.csv", d)),
         ("GC=F", lambda: fetch_yahoo("GC=F", "gold_monthly_gcf.csv", "close", d,
                                      daily_fname="gold_daily_gcf.csv")),
-        ("GC=F daily", lambda: fetch_yahoo_daily("GC=F", "gold_daily_gcf.csv", d)),
+        ("GLD daily", lambda: fetch_yahoo_daily("GLD", "gld_daily.csv", d)),
         ("GLD", lambda: fetch_yahoo("GLD", "gld_tr_monthly.csv", "adjclose", d,
                                     daily_fname="gld_daily.csv")),
-        ("GLD daily", lambda: fetch_yahoo_daily("GLD", "gld_daily.csv", d)),
         ("Shiller", lambda: fetch_shiller(d)),
         ("LBMA PM fix", lambda: fetch_lbma_mirror(d)),
         ("LBMA FRED mirror", lambda: fetch_lbma_fred_mirror(d)),
