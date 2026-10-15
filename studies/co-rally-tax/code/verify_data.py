@@ -18,6 +18,12 @@ Validation 2026-10-15 verdicts this battery encodes:
               QUARTER-end bars stored under a monthly name (169 rows/503 mo)
   DEFECT (F4) ^SPX quarterly bars MISLABELED: value = close of the 3-month
               window STARTING at the label (167/168 verified vs daily closes)
+  NEW (DFX-4) spx_price_monthly rebuilt from the chunked daily leg
+              (spx_daily.csv, 1984 ->): struct check for the new daily leg +
+              claim:C6b SPX monthly values == daily month-end resample, 0
+              tolerance; live section verifies the quarterly downgrade and the
+              +2-mo window shift are gone (downgrade-proof chunks, stored ==
+              fresh same-label month-end close)
   PASS  frozen LBMA fix mirror (sha-pinned, clean), FRED-era mirror
         (0.0004% mean dev), eco3min == Pink Sheet xlsx (0.000000%), TB3MS
         (complete 1934-01->), GLD/GC=F daily legs (clean), GC=F monthly
@@ -80,7 +86,8 @@ def structural(D):
     for name in ["gld_daily.csv", "gld_tr_monthly.csv", "gold_daily_gcf.csv",
                  "gold_monthly_eco3min.csv", "gold_monthly_gcf.csv",
                  "lbma_pm_fix_daily.csv", "lbma_pm_fix_fred_mirror.csv",
-                 "spx_price_monthly.csv", "spy_tr_monthly.csv", "tb3ms_monthly.csv"]:
+                 "spx_daily.csv", "spx_price_monthly.csv", "spy_tr_monthly.csv",
+                 "tb3ms_monthly.csv"]:
         df = load(D, name)
         s[name] = df
         dc, vcol = df.columns[0], df.columns[-1]
@@ -202,10 +209,28 @@ def claims(D, s):
         f"rows={len(sp)} span={len(full)}mo -> {len(full) - len(per)} months ABSENT; "
         f"present non-quarter months (excl. current partial)={len(nonq)} "
         f"(Yahoo range=max serves ^SPX as quarter-end bars only; reproduced live 2026-10-15)")
-    note("spx quarter-bar mislabel", "stored quarter rows' values = close of the 3-month window "
-         "STARTING at the label (167/168 exact vs daily closes; running Sep-Nov 2026 window drifts) "
-         "- naive row-diffs give 3-month returns labeled monthly, lagged 2 months. Unusable as "
-         "monthly closes even where present; fix = daily chunked fetch + month-end resample")
+    note("spx quarter-bar mislabel", "HISTORICAL, fixed by DFX-4: the old stored quarter rows' values were "
+         "the close of the 3-month window STARTING at the label (167/168 exact vs daily closes) - naive "
+         "row-diffs give 3-month returns labeled monthly, lagged 2 months. spx_price_monthly.csv is now the "
+         "month-end resample of the chunked daily leg (spx_daily.csv, 1984-01 ->); the quarterly payload is "
+         "never written (DFX-3 guard backstop)")
+
+    # C6b (DFX-4): SPX monthly values == month-END resample of the daily leg,
+    # 0 tolerance — the chunked-daily rebuild must reproduce the exact daily
+    # month-end close at the SAME label (no +2-mo window shift). Running
+    # month excluded: its row is an MTD snapshot (analysis-time drop stays
+    # the consumer's rule; both files carry the same last-snapshot value
+    # from the same fetch run, but only complete months are asserted).
+    spx_me = month_series(s["spx_daily.csv"], "close")
+    spm = sp.drop_duplicates("date", keep="last")
+    spm = spm[spm["date"].dt.to_period("M") != PARTIAL]
+    jsx = pd.DataFrame({"monthly": spm.groupby(spm["date"].dt.to_period("M"))["close"].last()}
+                       ).join(spx_me.rename("daily_me"), how="inner")
+    devx = (jsx["monthly"] - jsx["daily_me"]).abs()
+    chk("claim:C6b spx monthly==daily resample",
+        len(jsx) > 0 and bool((devx == 0.0).all()),
+        f"joined={len(jsx)} complete months max|dev|={devx.max() if len(jsx) else float('nan')} "
+        f"exactly (0 tolerance — DFX-4 rebuild is the daily leg's month-end resample)")
 
     # C7/C8 records
     tb = s["tb3ms_monthly.csv"]
@@ -298,8 +323,7 @@ def _get_json(url):
 
 def live_yahoo(D, s):
     P("=" * 20, "4a. LIVE Yahoo re-fetch (2s sleeps; interior months only)", "=" * 20)
-    for sym, fname, field in [("^SPX", "spx_price_monthly.csv", "close"),
-                              ("SPY", "spy_tr_monthly.csv", "adjclose"),
+    for sym, fname, field in [("SPY", "spy_tr_monthly.csv", "adjclose"),
                               ("GC=F", "gold_monthly_gcf.csv", "close"),
                               ("GLD", "gld_tr_monthly.csv", "adjclose")]:
         time.sleep(2)
@@ -321,13 +345,7 @@ def live_yahoo(D, s):
         jj = jj[jj.index != PARTIAL]
         dv = (jj["stored"] - jj["fresh"]).abs() / jj["fresh"] * 100
         ndup = sum(1 for v in fresh.values() if len(v) > 1)
-        if sym == "^SPX":
-            note("live ^SPX downgrade reproduced", f"fresh pull serves {len(fp)} bars "
-                 f"(not {len(pd.period_range(fp.index.min(), fp.index.max(), freq='M'))} months) — "
-                 "quarterly-only confirmed again today; interior drift months = running windows")
-            chk("live:spx interior", int((dv > 1).sum()) <= 1,
-                f"{len(jj)} interior months, mismatches>1%={int((dv > 1).sum())} (running windows only)")
-        elif sym == "SPY":
+        if sym == "SPY":
             note("spy adjclose anchor drift", f"max live-vs-stored {dv.max():.6f}% over {len(jj)} months "
                  "(ppm-scale adjustment-anchor recompute; immaterial)")
             chk("live:spy interior", dv.max() < 0.001, f"max|dev|={dv.max():.6f}%")
@@ -335,16 +353,44 @@ def live_yahoo(D, s):
             chk(f"live:{fname}", dv.max() < 1e-6,
                 f"{len(jj)} interior months max|dev|={dv.max():.8f}%; fresh dup-current months={ndup} "
                 "(API returns the running month twice with different snapshots -> F1 mechanism live)")
-    # ^SPX daily ground truth + Shiller P decode
+    # ^SPX (DFX-4): the production monthly file is now the month-END resample
+    # of the chunked DAILY leg — the quarterly range=max payload is no longer
+    # written (DFX-3 guard backstop), so the live check verifies the fix
+    # directly: (1) no downgraded chunk in the fresh daily fetch, and
+    # (2) every interior stored value == the fresh daily month-end close of
+    # the SAME label (downgrade and +2-mo window shift must be gone).
+    time.sleep(2)
+    try:
+        r = _get_json("https://query1.finance.yahoo.com/v8/finance/chart/%5ESPX"
+                      "?range=max&interval=1mo")["chart"]["result"][0]
+        qmonths = {dt.datetime.fromtimestamp(t, dt.timezone.utc).strftime("%Y-%m")
+                   for t, v in zip(r["timestamp"], r["indicators"]["quote"][0]["close"])
+                   if v is not None}
+        qper = pd.PeriodIndex([pd.Period(k, "M") for k in qmonths])
+        note("live ^SPX quarterly payload",
+             f"fresh range=max&interval=1mo still serves {len(qper)} bars over "
+             f"{len(pd.period_range(qper.min(), qper.max(), freq='M'))} months — "
+             "quarterly downgrade persists upstream; DFX-4 removed it from the "
+             "production path (chunked daily resample), DFX-3 guard is the backstop")
+    except Exception as e:  # noqa: BLE001 - report-only payload
+        note("live ^SPX quarterly payload",
+             f"fetch failed ({type(e).__name__}: {e}); report-only — the daily leg check below is the check")
+    # ^SPX daily ground truth (chunked, downgrade-tracked) + Shiller P decode
     rows = []
-    for y0 in range(1984, 2027, 5):
+    downgraded = []
+    this = dt.datetime.now(dt.timezone.utc).year + 1
+    for y0 in range(1984, this, 5):
         time.sleep(2)
         p1 = int(dt.datetime(y0, 1, 1, tzinfo=dt.timezone.utc).timestamp())
-        p2 = int(dt.datetime(min(y0 + 5, 2027), 1, 1, tzinfo=dt.timezone.utc).timestamp())
+        p2 = int(dt.datetime(min(y0 + 5, this), 1, 1, tzinfo=dt.timezone.utc).timestamp())
         r = _get_json("https://query1.finance.yahoo.com/v8/finance/chart/%5ESPX"
                       f"?period1={p1}&period2={p2}&interval=1d")["chart"]["result"][0]
         ts = r.get("timestamp") or []
         cl = r["indicators"]["quote"][0]["close"]
+        if len(ts) >= 2:
+            span = sorted(b - a for a, b in zip(ts, ts[1:]))
+            if span[len(span) // 2] > 5 * 86400:
+                downgraded.append(y0)
         rows += [(dt.datetime.fromtimestamp(t, dt.timezone.utc).strftime("%Y-%m-%d"), round(float(v), 6))
                  for t, v in zip(ts, cl) if v is not None]
     sd = pd.DataFrame(rows, columns=["date", "close"])
@@ -352,17 +398,17 @@ def live_yahoo(D, s):
     sd = sd.drop_duplicates("date").sort_values("date")
     me = sd.groupby(sd["date"].dt.to_period("M"))["close"].last()
     sp_stored = s["spx_price_monthly.csv"].drop_duplicates("date", keep="last")
-    hit = tot = 0
-    for _, rr in sp_stored.iterrows():
-        L = rr["date"].to_period("M")
-        if L == PARTIAL:
-            continue
-        tot += 1
-        c = me.get(L + 2)
-        if c is not None and abs(c - rr["close"]) <= max(1e-6 * c, 0.01):
-            hit += 1
-    chk("live:spx decode label+2", hit >= tot - 2,
-        f"{hit}/{tot} stored quarter rows == daily close of month label+2 (window-END close)")
+    sp_stored = sp_stored[sp_stored["date"].dt.to_period("M") != PARTIAL]
+    js = pd.DataFrame({"stored": sp_stored.set_index(
+        pd.PeriodIndex(sp_stored["date"].dt.to_period("M")))["close"]}
+    ).join(me.rename("daily_me"), how="inner")
+    tol = js["daily_me"].mul(1e-6).clip(lower=0.01)
+    hits = int(((js["stored"] - js["daily_me"]).abs() <= tol).sum())
+    chk("live:spx decode label+2",
+        not downgraded and len(js) > 0 and hits == len(js),
+        f"downgraded chunks={downgraded or 'none'} ({len(rows)} daily bars); "
+        f"{hits}/{len(js)} interior months == fresh daily month-end close of the SAME "
+        f"label (no +2-mo shift) — quarterly downgrade and window-start mislabel gone (DFX-4)")
     sh = shiller_read(D)
     if sh is not None:
         means = sd.groupby(sd["date"].dt.to_period("M"))["close"].mean()

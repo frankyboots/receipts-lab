@@ -28,7 +28,11 @@ Composition rule for analysis:
 
 Sources (verified reachable 2026-10-12 unless noted):
   1. FRED  TB3MS          -> tb3ms_monthly.csv       3-mo T-bill discount rate, monthly, 1950 ->
-  2. Yahoo ^SPX           -> spx_price_monthly.csv   S&P 500 price index, monthly close, 1984-12 ->
+  2. Yahoo ^SPX           -> spx_price_monthly.csv   S&P 500 price index, month-END close, 1984-01 ->
+     (DFX-4: BUILT FROM THE CHUNKED DAILY LEG BELOW — the range=max 1mo payload
+     is silently quarterly-downgraded and its bars are +2-mo window-start
+     mislabeled; it is NEVER written to the monthly file, DFX-3 guard backstop)
+     + ^SPX daily        -> spx_daily.csv            DFX-4 daily leg, chunked 5-year, 1984-01 ->
   3. Yahoo SPY            -> spy_tr_monthly.csv      adj close = dividend total-return proxy, 1993 ->
   4. Yahoo GC=F           -> gold_monthly_gcf.csv    COMEX front-month close, monthly, 2000-09 ->
      + GC=F daily        -> gold_daily_gcf.csv      daily basis/seam diagnostics
@@ -365,19 +369,20 @@ def fetch_yahoo(symbol, fname, field, data_dir, daily_fname=None):
     return len(rows)
 
 
-def fetch_yahoo_daily(symbol, fname, data_dir):
-    """Daily closes, fetched in 5-year chunks — Yahoo silently DOWNGRADES
-    range=max&interval=1d to monthly bars for some symbols (observed
-    2026-10-12), so chunk with period1/period2 and stitch. Gold LIVE
-    EXTENSION legs (GLD) and GC=F basis diagnostics."""
+def yahoo_daily_rows(symbol, start_year):
+    """Daily closes for `symbol`, fetched in 5-year chunks — Yahoo silently
+    DOWNGRADES range=max&interval=1d to monthly bars for some symbols
+    (observed 2026-10-12), so chunk with period1/period2 and stitch.
+    Downgrade guard: reject chunks whose median spacing is > 5 days
+    (monthly bars would be ~30). Returns [(YYYY-MM-DD, close), ...],
+    sorted and de-duped."""
     import datetime as _dt
     import time
     base = "https://query1.finance.yahoo.com/v8/finance/chart/" + \
         urllib.request.quote(symbol)
     rows, seen = [], set()
-    start = 2000
     this = _dt.datetime.now(_dt.timezone.utc).year + 1
-    for y0 in range(start, this, 5):
+    for y0 in range(start_year, this, 5):
         p1 = int(_dt.datetime(y0, 1, 1, tzinfo=_dt.timezone.utc).timestamp())
         p2 = int(_dt.datetime(min(y0 + 5, this), 1, 1, tzinfo=_dt.timezone.utc).timestamp())
         time.sleep(2)
@@ -406,7 +411,39 @@ def fetch_yahoo_daily(symbol, fname, data_dir):
                 seen.add(d)
                 rows.append((d, round(v, 6)))
     rows.sort()
+    return rows
+
+
+def fetch_yahoo_daily(symbol, fname, data_dir, start_year=2000):
+    """Daily closes, chunked (see yahoo_daily_rows). Gold LIVE EXTENSION legs
+    (GLD) and GC=F basis diagnostics start at 2000; the DFX-4 ^SPX leg starts
+    at 1984 (its full Yahoo daily history)."""
+    rows = yahoo_daily_rows(symbol, start_year)
     write_csv(os.path.join(data_dir, fname), ["date", "close"], rows)
+    return len(rows)
+
+
+def fetch_spx_monthly(data_dir):
+    """DFX-4: spx_price_monthly.csv as true month-END closes, immune to
+    Yahoo's silent quarterly downgrade and its +2-month window-start
+    mislabeling. The range=max&interval=1mo payload silently DOWNGRADES ^SPX
+    to QUARTER-end bars (F3: 169 rows over a 503-month span) and its values
+    are mislabeled — bar = close of the 3-month window STARTING at the label
+    (F4, verified 167/168 vs dailies 2026-10-15). That payload is therefore
+    NEVER written to the monthly file: the daily leg is fetched chunked
+    (downgrade-proof; verified 2026-10-15: 10,780 rows, no downgrades),
+    stored as spx_daily.csv, and the monthly file is its month-end resample
+    (one row per month, last close of the month wins — DFX-1 semantics; the
+    running month's row is an MTD snapshot and stays in the file). The DFX-3
+    per-file coverage guard still runs as a backstop before the write."""
+    daily = yahoo_daily_rows("^SPX", 1984)
+    write_csv(os.path.join(data_dir, "spx_daily.csv"), ["date", "close"], daily)
+    rows = [(m + "-01", v) for m, v in sorted(month_end_map(daily).items())]
+    check_monthly_coverage(rows, "^SPX", "spx_price_monthly.csv")  # DFX-3 backstop
+    write_csv(os.path.join(data_dir, "spx_price_monthly.csv"),
+              ["date", "close"], rows)
+    print(f"  spx_price_monthly rebuilt from chunked dailies: "
+          f"{len(daily)} daily bars -> {len(rows)} month-end rows")
     return len(rows)
 
 
@@ -556,7 +593,7 @@ def main():
     failures = []
     jobs = [
         ("TB3MS", lambda: fetch_fred_tb3ms(d)),
-        ("^SPX", lambda: fetch_yahoo("^SPX", "spx_price_monthly.csv", "close", d)),
+        ("^SPX", lambda: fetch_spx_monthly(d)),
         ("SPY", lambda: fetch_yahoo("SPY", "spy_tr_monthly.csv", "adjclose", d)),
         ("GC=F", lambda: fetch_yahoo("GC=F", "gold_monthly_gcf.csv", "close", d,
                                      daily_fname="gold_daily_gcf.csv")),
