@@ -87,8 +87,26 @@ def get(url, headers=None):
         return r.read()
 
 
+def dedupe_monthly(rows):
+    """Keep exactly one row per month: LAST occurrence wins.
+
+    DFX-1 (F1): Yahoo monthly payloads return the running month twice with
+    different intraday snapshots (reproduced live 2026-10-15: GC=F 4107.9 vs
+    4166.3). The surviving row may be an MTD snapshot for the running month —
+    it stays in the file; dropping it is the CONSUMER's analysis-time rule,
+    never the fetch's. Input rows are (YYYY-MM-01, close) in payload order
+    (chronological); output preserves that order.
+    """
+    last = {}
+    for k, v in rows:
+        last[k] = v
+    return list(last.items())
+
+
 def yahoo_monthly(symbol, field="adjclose"):
-    """Return list of (YYYY-MM-01, close) month-end rows from Yahoo chart API."""
+    """Return list of (YYYY-MM-01, close) month-end rows from Yahoo chart API.
+
+    Exactly one row per month (dedupe_monthly, last occurrence wins) — DFX-1."""
     import time
     time.sleep(2)  # Yahoo 429-throttles bursts from datacenter IPs
     url = (
@@ -115,7 +133,7 @@ def yahoo_monthly(symbol, field="adjclose"):
             continue  # Yahoo occasionally mixes non-numeric junk into arrays
         d = _dt.datetime.fromtimestamp(t, _dt.timezone.utc)
         rows.append((d.strftime("%Y-%m-01"), round(v, 6)))
-    return rows
+    return dedupe_monthly(rows)
 
 
 def write_csv(path, header, rows):
