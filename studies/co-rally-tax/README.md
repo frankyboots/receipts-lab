@@ -42,7 +42,7 @@ Per-file verdicts:
 | gold_monthly_eco3min.csv | PASS | 801 mo complete 1960-01→2026-09; == Pink Sheet xlsx to 0.000000%; live re-download byte-identical |
 | CMO-Historical-Data-Monthly.xlsx | PASS | == eco3min over all 801 shared months; live re-download byte-identical |
 | shiller_ie_data.xls | PASS | P decoded 1871-01→2023-09; P = monthly AVERAGE of daily closes, exact 12/12 mo (2022-09→2023-08); final served row 2023-09 anomalous (+2.42% vs true Sep mean) — drop it; file frozen as served |
-| tb3ms_monthly.csv | PASS | complete 1934-01→2026-09, no gaps (fetch header's "1950 →" is WRONG — fix with DFX); live re-fetch timed out at validation time (transient FRED edge — re-run `--live`) |
+| tb3ms_monthly.csv | PASS | complete 1934-01→2026-09, no gaps (fetch header's "1950 →" is WRONG — fix with DFX); live re-fetch: fresh FRED pull value-identical on all 1,113 shared months (0 mismatches, max dev 0.0, both end 2026-09; bytes differ only in the renamed header), pulled during the pre-outage window after which FRED's edge went dark from this host |
 | gld_daily.csv | PASS | clean, max gap 5d, no dups |
 | gold_daily_gcf.csv | PASS | clean, max gap 5d, no dups |
 | gld_tr_monthly.csv | (F1) | dup running month (2026-10 ×2, both intraday snapshots); values otherwise == daily month-ends 0.00000000% over 262 mo |
@@ -72,6 +72,10 @@ Reproduced claims (all re-derived from stored bytes + live pulls, 2026-10-15):
   median 0.3463%, p90 1.1789%, same max @ 2026-01.
 - eco3min == xlsx 0.000000% ✓; GLD monthly == daily ME 0.00000000% ✓; GC=F
   monthly == daily ME 0.00000000% ✓
+- TB3MS vs fresh FRED pull: 1,113/1,113 months value-identical (0 mismatches);
+  all 5 static sources re-downloaded byte-identical (fan-out run 05:15 + parent
+  re-run — two independent confirmations each; FRED unreachable from this host
+  after ~05:17, timing out 0 bytes — transient, re-attempt via `--live`)
 - Shiller P = monthly average of dailies ✓; Shiller→Yahoo seam at 2023-09 mixes
   average-vs-close measures (README already mandates level-normalized stitch + returns)
 - live: ^SPX quarterly downgrade AND dup-running-month both reproduced fresh;
