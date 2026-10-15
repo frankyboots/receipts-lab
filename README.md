@@ -38,6 +38,17 @@ clicks.
 5. **Failures air in prime time.** REFUTED studies get the same README
    treatment as SUPPORTED ones.
 
+## Branches & hash stability
+
+Study work happens on `study/<wiki-slug>` branches — seeded there, built
+there, reviewed there. `main` is the published record: append-only, updated
+only by `git merge --ff-only study/<slug>` once a study passes review (plus
+rare meta-doc commits like this one). Never rebase, amend, or force-push
+`main`; a post-merge mistake is corrected by a forward `git revert`, never
+by rewriting history, because verdict pins in the wiki reference these
+hashes forever. GitHub branch protection backs this: force-pushes and
+deletions of `main` are denied.
+
 ## Not investment advice
 
 Educational research code. Backtests are hypothetical. Nothing here is a
