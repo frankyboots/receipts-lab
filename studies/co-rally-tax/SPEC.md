@@ -1,7 +1,7 @@
 ---
 study: co-rally-tax
 wiki: https://github.com/receiptsandregimes/research-wiki/blob/main/studies/co-rally-tax.md
-baseline_commit: ''   # set by the FIRST implementation run (HEAD before any code); never overwritten
+baseline_commit: 8e20ffce5157f94d7885707f822d9864e174ba61   # set by the FIRST implementation run (HEAD before any code; build session 2026-10-15); never overwritten
 companions:
   - https://github.com/receiptsandregimes/research-wiki/blob/main/studies/co-rally-tax.md   # protocol authority; read alongside SPEC.md
 ---
