@@ -232,18 +232,22 @@ class FetchYahooWiringTest(unittest.TestCase):
                             daily_fname="gold_daily_gcf.csv")
             self.assertFalse(os.path.exists(target))
 
-    def test_no_daily_leg_wired_writes_payload_as_served(self):
+    def test_no_daily_leg_holed_payload_aborts_via_dfx3_guard(self):
         # daily_fname=None (symbols without a daily leg, e.g. ^SPX/SPY):
-        # DFX-2 backfill/abort does not apply; the payload is written as
-        # served (its coverage guarding is the DFX-3 per-file guard, not
-        # this cap — kept separate so this slice stays single-cap).
+        # DFX-2 backfill/abort does not apply, but the DFX-3 per-file
+        # coverage guard now catches this holed payload here — its 2025-02
+        # hole leaves coverage 2/3 = 67% (< 80% of its own span) — so the
+        # fetch aborts BEFORE the file is written and nothing lands in
+        # data/. This supersedes the old DFX-2 "write payload as served"
+        # behavior that this test previously asserted; the DFX-3 cap owns
+        # the guard now (kept as the single-cap no-daily-leg regression).
         with tempfile.TemporaryDirectory() as tmp:
             payload = make_payload([(ts(2025, 1), 100.0), (ts(2025, 3), 102.0)])
-            n = self._yahoo(payload, "spx_price_monthly.csv", tmp)
-            self.assertEqual(n, 2)
-            with open(os.path.join(tmp, "spx_price_monthly.csv")) as f:
-                self.assertEqual(f.read().splitlines(),
-                                 ["date,close", "2025-01-01,100.0", "2025-03-01,102.0"])
+            with self.assertRaises(fetch.MonthlyCoverageGuardAbort) as cm:
+                self._yahoo(payload, "spx_price_monthly.csv", tmp)
+            self.assertIn("coverage", cm.exception.reason)
+            self.assertFalse(os.path.exists(
+                os.path.join(tmp, "spx_price_monthly.csv")))
 
 
 if __name__ == "__main__":

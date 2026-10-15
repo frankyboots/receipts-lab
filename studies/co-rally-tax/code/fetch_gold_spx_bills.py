@@ -202,6 +202,96 @@ def backfill_monthly(monthly_rows, daily_month_ends, symbol, fname):
     return out
 
 
+class MonthlyCoverageGuardAbort(Exception):
+    """DFX-3 loud abort: a monthly-named file does not cover its own
+    [first_date, PARTIAL] period range at the density a genuine monthly
+    series has — a gap > 2 consecutive months, or coverage < 80% of the
+    file's own span. The recorded instance (F3): Yahoo range=max&interval=1mo
+    silently DOWNGRADED ^SPX to quarter-end bars (169 rows over a 503-month
+    span) stored under a monthly name. The fetch refuses to persist a sparse
+    monthly file; main() maps this to a failed job and exits non-zero, and no
+    partial file lands in `data/` (the guard runs BEFORE write_csv). It is
+    PER-FILE, not per-fetch-run: each monthly file is judged on its OWN span,
+    so a downgraded ^SPX trips even while the ETF/futures monthlies stay
+    complete."""
+
+    def __init__(self, symbol, fname, span_months, present, max_gap, reason):
+        self.symbol = symbol
+        self.fname = fname
+        self.span_months = span_months
+        self.present = present
+        self.max_gap = max_gap
+        self.reason = reason
+        super().__init__(
+            f"{symbol} -> {fname}: DFX-3 per-file coverage guard tripped "
+            f"({reason}): {present}/{span_months} months of the file's own "
+            f"[first_date, last] span present, max consecutive gap = "
+            f"{max_gap} month(s) — aborting; refusing to persist a sparse "
+            f"monthly file")
+
+
+def _span_months(start, end):
+    """DFX-3 helper: inclusive list of 'YYYY-MM' strings from `start` to
+    `end` (both 'YYYY-MM')."""
+    y, m = int(start[:4]), int(start[5:7])
+    ey, em = int(end[:4]), int(end[5:7])
+    out = []
+    while (y, m) <= (ey, em):
+        out.append(f"{y:04d}-{m:02d}")
+        m += 1
+        if m == 13:
+            y, m = y + 1, 1
+    return out
+
+
+def check_monthly_coverage(rows, symbol, fname):
+    """DFX-3 per-file monthly coverage guard.
+
+    `rows`: the monthly file's final rows (YYYY-MM-01, value) in write order
+    (deduped, chronological; a running-month MTD snapshot is included).
+    Asserts the file covers its OWN period range [first row's month, last
+    row's month] at the density a genuine monthly series has. Per DECISIONS
+    DFX-3 a SHORTFALL is either:
+      - any gap > 2 consecutive months (>= 3 missing months in a row), or
+      - coverage < 80% of the file's own span (present/total months).
+    Either one trips the guard and raises MonthlyCoverageGuardAbort.
+
+    A complete file (every month of its span present) passes; a
+    quarterly-downgraded payload (~1 bar / 3 months -> ~33% coverage) trips.
+    An empty file (no rows) trips: a monthly-named file with no months covers
+    nothing (empty-file guarding deferred from DFX-2 to this cap). The guard
+    is PER-FILE — each file is judged on its own span, not the whole fetch
+    run. Returns None when the file's coverage is sound.
+    """
+    if not rows:
+        raise MonthlyCoverageGuardAbort(symbol, fname, 0, 0, 0,
+                                        "empty monthly file (no months)")
+    present = sorted({r[0][:7] for r in rows})
+    span = _span_months(present[0], present[-1])
+    total = len(span)
+    present_set = set(present)
+    n_present = len(present_set)
+    max_gap = run = 0
+    for key in span:
+        if key in present_set:
+            run = 0
+        else:
+            run += 1
+            if run > max_gap:
+                max_gap = run
+    if max_gap > 2:
+        raise MonthlyCoverageGuardAbort(
+            symbol, fname, total, n_present, max_gap,
+            f"gap of {max_gap} consecutive months (> 2)")
+    # coverage < 80% of the file's own span; integer compare (exact, no float)
+    if n_present * 10 < total * 8:
+        raise MonthlyCoverageGuardAbort(
+            symbol, fname, total, n_present, max_gap,
+            f"coverage {n_present}/{total} = {n_present * 100 / total:.0f}% "
+            f"of own span (< 80%)")
+    return None
+
+
 def yahoo_monthly(symbol, field="adjclose"):
     """Return list of (YYYY-MM-01, close) month-end rows from Yahoo chart API.
 
@@ -259,13 +349,18 @@ def fetch_yahoo(symbol, fname, field, data_dir, daily_fname=None):
     """Monthly close/adjclose file for `symbol`. When `daily_fname` is
     given (the same symbol's stored daily leg), DFX-2 backfills payload
     month-gaps from that leg and aborts (MonthlyCoverageAbort) on any month
-    missing from both legs — the backfill runs BEFORE the file is written,
-    so an abort never leaves a partial/holed file in `data_dir`."""
+    missing from both legs. DFX-3 then runs the per-file coverage
+    guard on the final rows: a sparse monthly file (any gap > 2 consecutive
+    months, or coverage < 80% of the file's own span — e.g. a Yahoo range=max
+    monthly request silently downgraded to quarter-end bars, F3) trips the
+    guard and ABORTS BEFORE the file is written, so nothing partial lands in
+    `data_dir`. Both the backfill and the guard run before write_csv."""
     rows = yahoo_monthly(symbol, field=field)
     if daily_fname is not None:
         leg = load_daily_leg(data_dir, daily_fname)
         rows = backfill_monthly(rows, month_end_map(leg) if leg else {},
                                 symbol, fname)
+    check_monthly_coverage(rows, symbol, fname)  # DFX-3 per-file guard
     write_csv(os.path.join(data_dir, fname), ["date", "close"], rows)
     return len(rows)
 
