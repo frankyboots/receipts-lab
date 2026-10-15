@@ -161,7 +161,8 @@ def claims(D, s):
          f"median {de.median():.3f}% but diverge in fast markets (max {de.max():.2f}% @ {de.idxmax()}); "
          "Pink Sheet is cross-check only, never signals")
 
-    # C4 GC=F month-end basis (claim: median 0.36% p90 1.21% max 4.75% @ 2026-01, 260 mo via monthly file)
+    # C4 GC=F month-end basis (claim: median 0.36% p90 1.21% max 4.75% @ 2026-01;
+    # 304 mo complete post-DFX-2 — the pre-fix 260 was the F2 gappy file's own coverage)
     gme = fx.groupby(fx[fx.columns[0]].dt.to_period("M"))["gold_pm_usd"].last()
     gd = s["gold_daily_gcf.csv"]
     gcme = gd.groupby(gd["date"].dt.to_period("M"))["close"].last()
@@ -172,7 +173,8 @@ def claims(D, s):
     ok = (abs(basis.median() - 0.36) < 0.02 and abs(basis.quantile(.9) - 1.21) < 0.05
           and abs(basis.max() - 4.75) < 0.05 and str(basis.idxmax()) == "2026-01")
     chk("claim:C4 gcf-vs-fix basis", ok,
-        f"monthly-file leg {len(jb)} mo (claim 260; = file coverage, itself the F2 defect) "
+        f"monthly-file leg {len(jb)} mo (claim 304 mo, complete post-DFX-2; the pre-fix 260 "
+        f"was the F2 gappy file's own coverage) "
         f"median={basis.median():.4f}% p90={basis.quantile(.9):.4f}% max={basis.max():.4f}% @ {basis.idxmax()}")
     jbd = pd.DataFrame({"fix": gme, "gcf": gcme}).dropna().loc["2000-10":"2026-01"]
     bd = (jbd["gcf"] - jbd["fix"]).abs() / jbd["fix"] * 100
@@ -235,7 +237,8 @@ def claims(D, s):
     # C7/C8 records
     tb = s["tb3ms_monthly.csv"]
     chk("claim:C8 tb3ms span", str(tb[tb.columns[0]].iloc[0].date()) == "1934-01-01",
-        f"first={tb[tb.columns[0]].iloc[0].date()} rows={len(tb)} (fetch header claims '1950 ->' — WRONG, record fix)")
+        f"first={tb[tb.columns[0]].iloc[0].date()} rows={len(tb)} (fetch header corrected to "
+        f"'1934-01' at DFX-5; the earlier '1950 ->' was wrong)")
     sh_rows = shiller_read(D)
     if sh_rows is not None:
         chk("claim:C9 shiller span", sh_rows.index.min() == pd.Period("1871-01", "M"),
@@ -256,9 +259,20 @@ def claims(D, s):
     jg2 = pd.DataFrame({"monthly_file": gml}).join(gcme.rename("daily_me"), how="inner")
     jg2 = jg2[jg2.index != PARTIAL]
     dg2 = (jg2["monthly_file"] - jg2["daily_me"]).abs() / jg2["daily_me"] * 100
+    # the diagnosis follows the condition actually tripped (a canned coverage
+    # tail printed on a value deviation — or on a PASS — misdirects the reader)
+    gcf_span = pd.period_range(gml.index.min(), gml.index.max(), freq="M")
+    gcf_missing = sorted(set(gcf_span) - set(gml.index) - {PARTIAL})
+    if dg2.max() >= 1e-6:
+        c12b_diag = ("stored monthly VALUES deviate from the daily month-end leg "
+                     "(value defect, not coverage)")
+    elif gcf_missing:
+        c12b_diag = (f"stored VALUES correct; coverage short {len(gcf_missing)} mo "
+                     f"({[str(m) for m in gcf_missing[:6]]})")
+    else:
+        c12b_diag = "stored VALUES correct and full own-span coverage (0 missing months)"
     chk("claim:C12b gcf monthly==daily ME", dg2.max() < 1e-6,
-        f"joined={len(jg2)} shared months max|dev|={dg2.max():.8f}% -> stored VALUES correct; "
-        "the defect is COVERAGE (46 missing months), not values")
+        f"joined={len(jg2)} shared months max|dev|={dg2.max():.8f}% -> {c12b_diag}")
 
     # C11 seam presence
     P("--- C11 composite seam ---")
