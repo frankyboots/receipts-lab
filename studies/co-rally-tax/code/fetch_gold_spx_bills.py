@@ -103,6 +103,105 @@ def dedupe_monthly(rows):
     return list(last.items())
 
 
+class MonthlyCoverageAbort(Exception):
+    """DFX-2 loud abort: a month of the monthly file's own span is missing
+    from BOTH the monthly payload and the same symbol's daily leg. The fetch
+    refuses to write a holed monthly file (never a hole, never an
+    interpolated guess); main() reports it as a failed job and exits
+    non-zero, and no partial/holed file is written."""
+
+    def __init__(self, symbol, fname, missing):
+        self.symbol = symbol
+        self.fname = fname
+        self.missing = list(missing)
+        shown = ", ".join(self.missing[:10]) + ("…" if len(self.missing) > 10 else "")
+        super().__init__(
+            f"{symbol} -> {fname}: {len(self.missing)} month(s) in the file's own span "
+            f"missing from BOTH the monthly payload and the daily leg ({shown}) — "
+            f"aborting; refusing to write a holed monthly file")
+
+
+def month_end_map(daily_rows):
+    """DFX-2: {'YYYY-MM': close of the LAST daily row in that month}.
+
+    daily_rows: (YYYY-MM-DD, close) pairs; the last calendar day present in
+    the month wins (max date), so row order need not be chronological.
+    `close` may be a float (in-memory leg) or the raw stored string (disk
+    leg) — it passes through untouched so backfilled month-ends stay
+    byte-equal to the daily file's own month-end rows."""
+    last = {}
+    for d, v in daily_rows:
+        m = d[:7]
+        if m not in last or d > last[m][0]:
+            last[m] = (d, v)
+    return {m: v for m, (d, v) in last.items()}
+
+
+def load_daily_leg(data_dir, fname):
+    """DFX-2 backfill source: the SAME symbol's stored daily-leg CSV
+    (header `date,close`). Closes are kept as the raw stored strings so a
+    backfilled month-end is byte-equal to the daily file's month-end row.
+    Returns [(date, close_str), ...] in file order, or None when the file
+    does not exist yet — with no daily leg on disk, every month the payload
+    lacks is a both-legs-gap MonthlyCoverageAbort."""
+    import csv as _csv
+    path = os.path.join(data_dir, fname)
+    if not os.path.exists(path):
+        return None
+    with open(path, newline="") as f:
+        return [(r["date"], r["close"]) for r in _csv.DictReader(f)]
+
+
+def backfill_monthly(monthly_rows, daily_month_ends, symbol, fname):
+    """DFX-2: emit a monthly file with no missing months.
+
+    Months the deduped monthly payload lacks a valid close for (GC=F
+    holidays/suspensions — the silent None-close drop, F2) are backfilled
+    from the same symbol's complete daily-leg month-end, byte-equal to the
+    daily month-end. The file's own span is [first payload month, last
+    payload month]; a month of that span missing from BOTH the payload and
+    the daily leg raises MonthlyCoverageAbort BEFORE anything is written —
+    never a hole, never an interpolated guess.
+
+    `monthly_rows`: (YYYY-MM-01, close), deduped, chronological.
+    `daily_month_ends`: month_end_map of the daily leg ({} when absent).
+    Payload-present months are kept verbatim (payload wins; the running
+    month's MTD row is retained — analysis-time drop stays the consumer's
+    rule); daily-leg months outside the payload span are ignored. An empty
+    payload has no span to cover and is returned as-is (empty-file
+    guarding is the DFX-3 per-file coverage guard, not this cap).
+    """
+    if not monthly_rows:
+        return []
+    have = {}
+    for k, v in monthly_rows:
+        have[k[:7]] = v
+    start, end = monthly_rows[0][0][:7], monthly_rows[-1][0][:7]
+    y, m = int(start[:4]), int(start[5:7])
+    out, backfilled, missing = [], [], []
+    while True:
+        key = f"{y:04d}-{m:02d}"
+        if key in have:
+            out.append((key + "-01", have[key]))
+        elif key in daily_month_ends:
+            out.append((key + "-01", daily_month_ends[key]))
+            backfilled.append(key)
+        else:
+            missing.append(key)
+        if key == end:
+            break
+        m += 1
+        if m == 13:
+            y, m = y + 1, 1
+    if missing:
+        raise MonthlyCoverageAbort(symbol, fname, missing)
+    if backfilled:
+        shown = ", ".join(backfilled[:6]) + ("…" if len(backfilled) > 6 else "")
+        print(f"  backfilled {len(backfilled)} month-end(s) from daily leg "
+              f"({symbol} {fname}): {shown}")
+    return out
+
+
 def yahoo_monthly(symbol, field="adjclose"):
     """Return list of (YYYY-MM-01, close) month-end rows from Yahoo chart API.
 
@@ -156,8 +255,17 @@ def fetch_fred_tb3ms(data_dir):
     return len(rows)
 
 
-def fetch_yahoo(symbol, fname, field, data_dir):
+def fetch_yahoo(symbol, fname, field, data_dir, daily_fname=None):
+    """Monthly close/adjclose file for `symbol`. When `daily_fname` is
+    given (the same symbol's stored daily leg), DFX-2 backfills payload
+    month-gaps from that leg and aborts (MonthlyCoverageAbort) on any month
+    missing from both legs — the backfill runs BEFORE the file is written,
+    so an abort never leaves a partial/holed file in `data_dir`."""
     rows = yahoo_monthly(symbol, field=field)
+    if daily_fname is not None:
+        leg = load_daily_leg(data_dir, daily_fname)
+        rows = backfill_monthly(rows, month_end_map(leg) if leg else {},
+                                symbol, fname)
     write_csv(os.path.join(data_dir, fname), ["date", "close"], rows)
     return len(rows)
 
@@ -355,9 +463,11 @@ def main():
         ("TB3MS", lambda: fetch_fred_tb3ms(d)),
         ("^SPX", lambda: fetch_yahoo("^SPX", "spx_price_monthly.csv", "close", d)),
         ("SPY", lambda: fetch_yahoo("SPY", "spy_tr_monthly.csv", "adjclose", d)),
-        ("GC=F", lambda: fetch_yahoo("GC=F", "gold_monthly_gcf.csv", "close", d)),
+        ("GC=F", lambda: fetch_yahoo("GC=F", "gold_monthly_gcf.csv", "close", d,
+                                     daily_fname="gold_daily_gcf.csv")),
         ("GC=F daily", lambda: fetch_yahoo_daily("GC=F", "gold_daily_gcf.csv", d)),
-        ("GLD", lambda: fetch_yahoo("GLD", "gld_tr_monthly.csv", "adjclose", d)),
+        ("GLD", lambda: fetch_yahoo("GLD", "gld_tr_monthly.csv", "adjclose", d,
+                                    daily_fname="gld_daily.csv")),
         ("GLD daily", lambda: fetch_yahoo_daily("GLD", "gld_daily.csv", d)),
         ("Shiller", lambda: fetch_shiller(d)),
         ("LBMA PM fix", lambda: fetch_lbma_mirror(d)),
