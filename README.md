@@ -40,8 +40,15 @@ clicks.
 
 ## Branches & hash stability
 
-Study work happens on `study/<wiki-slug>` branches — seeded there, built
-there, reviewed there. `main` is the published record: append-only, updated
+Study work happens on `study/<wiki-slug>` branches — seeded, validated,
+spec'd, built, and reviewed there, from the very first file onward. The branch
+is created in the seed stage's first lab act, off the current `main` tip, and
+every stage asserts it before writing or committing anything: **no
+study-specific file is ever written or committed on `main`.** Before any study
+commit, `git rev-parse --abbrev-ref HEAD` must read `study/<slug>`; if it reads
+`main`, create the branch off the current `main` tip and move the work there
+(studies seeded before this rule have no branch — they get one for all new
+work). `main` is the published record: append-only, updated
 only by `git merge --ff-only study/<slug>` once a study passes review (plus
 rare meta-doc commits like this one). Never rebase, amend, or force-push
 `main`; a post-merge mistake is corrected by a forward `git revert`, never
