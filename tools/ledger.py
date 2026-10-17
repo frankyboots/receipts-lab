@@ -160,6 +160,123 @@ def cmd_check(args) -> int:
     return 0 if bad == 0 else 1
 
 
+def cmd_split(args) -> int:
+    """Split one ledger into a binding log + a narrative log, verified."""
+    src = args.file
+    text = open(src).read()
+    raw = text.split("\n")
+    src_dir = os.path.dirname(os.path.abspath(src))
+    slug = os.path.basename(src_dir)
+    # outputs live NEXT TO the source by default; a relative default would write
+    # into whatever CWD the caller happened to be in (seen 2026-10-17)
+    args.out_binding = args.out_binding or os.path.join(src_dir, "DECISIONS.md")
+    args.out_narrative = args.out_narrative or os.path.join(src_dir, "EVENTS.md")
+    binding_rows, narrative_rows, malformed = [], [], []
+    for i, line in enumerate(raw, 1):
+        if not line.strip() or line.startswith("#"):
+            continue
+        m = LINE_RE.match(line)
+        if not m:
+            malformed.append((i, line[:70]))
+            continue
+        if m.group(2) not in TYPES:
+            malformed.append((i, f"unknown type {m.group(2)!r}"))
+            continue
+        (binding_rows if m.group(2) in BINDING else narrative_rows).append(line)
+    if malformed:
+        print("REFUSED: source has lines that are neither headings, blanks, nor "
+              "well-formed typed entries:", file=sys.stderr)
+        for i, frag in malformed:
+            print(f"  L{i}: {frag}", file=sys.stderr)
+        return 1
+    src_sha = hashlib.sha256(text.encode()).hexdigest()
+    n_typed = len(binding_rows) + len(narrative_rows)
+    d = args.date
+    common = (
+        f"\nTwo-file ledger for this study. Split {d} out of a single\n"
+        f"`DECISIONS.md` @ sha256 {src_sha} ({n_typed} typed entries). Append-only: one\n"
+        f"dated `YYYY-MM-DD | type | text` line per entry, in order; later entry\n"
+        f"supersedes earlier on the same point. Append with\n"
+        f"`python3 tools/ledger.py append <file> \"<line>\"` (proves the prior bytes are\n"
+        f"untouched); entry budget ~800 chars of prose, raw output goes to\n"
+        f"`code/probes/`. Read-side contract: `receipts-lab-study-build` →\n"
+        f"\"Ledger access\".\n")
+    hdr_b = (f"# Decisions — {slug} (binding log, append-only)\n"
+             f"\nBinding entries only: decision, constraint, capability, assumption,\n"
+             f"question, direction. Event and watch-item lines — including every\n"
+             f"`state:` block — live in `EVENTS.md`. This file is small on purpose: a\n"
+             f"session reads it WHOLE, and the SPEC is re-rendered from it.\n" + common)
+    hdr_n = (f"# Events — {slug} (narrative log, append-only; GREP ONLY)\n"
+             f"\nEvent and watch-item lines: build start/done, review verdicts, gate\n"
+             f"records, probe findings and Frank's rulings, each carrying its trailing\n"
+             f"`state:` block. Never read this file whole — sweep it\n"
+             f"(`grep -o 'state: [^|]*$' EVENTS.md | tail -1`). Binding decisions,\n"
+             f"constraints and capabilities live in `DECISIONS.md`.\n" + common)
+    split_d = (f"{d} | decision | Ledger split (Frank-approved review of 2026-10-17): "
+               f"`DECISIONS.md` is now the BINDING log only — event and watch-item lines "
+               f"moved byte-identically and in order to `EVENTS.md`. Pre-split blob sha256 "
+               f"{src_sha} ({n_typed} typed entries). Growth rule with the new shape: "
+               f"~800-char entry budget, split trigger at ~20KB of bindings "
+               f"(receipts-lab-study-build \"Ledger access\").")
+    split_e = (f"{d} | event | Ledger split, narrative half: every event and watch-item "
+               f"line of the pre-split `DECISIONS.md` (blob sha256 {src_sha}, {n_typed} "
+               f"typed entries) landed here byte-identically and in order, `state:` blocks "
+               f"riding their own lines. Binding lines remain in `DECISIONS.md`.")
+    out_b = hdr_b + "\n" + "\n".join(binding_rows + [split_d]) + "\n"
+    out_n = hdr_n + "\n" + "\n".join(narrative_rows + [split_e]) + "\n"
+    # verification: each routed bucket, byte-for-byte, in source order; nothing dropped
+    def seq_sha(rows):
+        return hashlib.sha256("\n".join(rows).encode()).hexdigest()
+    def typed_rows(lines):
+        rows = []
+        for line in lines:
+            m = LINE_RE.match(line)
+            if line.strip() and not line.startswith("#") and m:
+                rows.append((m.group(2), line))
+        return rows
+
+    src_b = [line for typ, line in typed_rows(raw) if typ in BINDING]
+    src_n = [line for typ, line in typed_rows(raw) if typ in NARRATIVE]
+    checks = [
+        ("binding subset byte-identical + order-preserving",
+         seq_sha(binding_rows) == seq_sha(src_b)),
+        ("narrative subset byte-identical + order-preserving",
+         seq_sha(narrative_rows) == seq_sha(src_n)),
+        ("no entry dropped or duplicated",
+         len(binding_rows) + len(narrative_rows) ==
+         len([l for l in raw if l.strip() and not l.startswith("#")])),
+        ("every source entry classified",
+         len(src_b) + len(src_n) == n_typed),
+    ]
+    print(f"source {src}: {len(raw)} lines, {len(text)} chars, sha256 {src_sha}")
+    print(f"  -> {args.out_binding}: {len(binding_rows)} binding entries "
+          f"+ 1 split line ({len(out_b)} chars)")
+    print(f"  -> {args.out_narrative}: {len(narrative_rows)} narrative entries "
+          f"+ 1 split line ({len(out_n)} chars)")
+    for label, good in checks:
+        print(f"  [{'PASS' if good else 'FAIL'}] {label}")
+    ok = all(c[1] for c in checks)
+    if not ok:
+        print("REFUSED: verification failed; nothing written", file=sys.stderr)
+        return 1
+    if args.write:
+        for path, body in ((args.out_binding, out_b), (args.out_narrative, out_n)):
+            with open(path, "w") as fh:
+                fh.write(body)
+        outs = (os.path.abspath(args.out_binding), os.path.abspath(args.out_narrative))
+        if os.path.abspath(src) in outs:
+            print("written in place — the source path is one of the outputs "
+                  "(DECISIONS.md rewritten as the binding log)")
+        elif args.remove_source:
+            os.remove(src)
+            print(f"written; source removed ({src})")
+        else:
+            print(f"written; source left in place ({src}) — remove it by hand")
+    else:
+        print("dry run — nothing written (pass --write)")
+    return 0 if ok else 1
+
+
 def main(argv=None) -> int:
     p = argparse.ArgumentParser(prog="ledger.py",
                                 description="append-only ledger tool: append/index/tail/check")
@@ -179,6 +296,14 @@ def main(argv=None) -> int:
     t.add_argument("file")
     t.add_argument("-n", type=int, default=3)
     t.set_defaults(func=cmd_tail)
+    s = sub.add_parser("split", help="split one ledger into binding + narrative logs, verified")
+    s.add_argument("file")
+    s.add_argument("--out-binding", help="default: <source dir>/DECISIONS.md")
+    s.add_argument("--out-narrative", help="default: <source dir>/EVENTS.md")
+    s.add_argument("--date", required=True)
+    s.add_argument("--write", action="store_true")
+    s.add_argument("--remove-source", action="store_true")
+    s.set_defaults(func=cmd_split)
     c = sub.add_parser("check", help="line shape, type/file match, entry budget")
     c.add_argument("files", nargs="+")
     c.add_argument("--budget", type=int, default=DEFAULT_BUDGET)
