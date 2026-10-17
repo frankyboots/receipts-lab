@@ -33,13 +33,16 @@ SHARED fetch script. All four closed via the §8 data-fix SPEC (DFX-1..4); DFX-5
 re-fetched all study data with the fixed script and re-validated: verdict
 **PASS — 22/22 checks, 0 open defects** (offline battery on the re-fetched
 `data/`, 2026-10-15). The fetch script is shared by the 3 sibling studies; its
-post-DFX sha is pinned in DECISIONS.md as the family's new shared reference —
+post-DFX sha is pinned in the study ledger (the value in `EVENTS.md` — DFX-5 and
+merge-gate `state:` blocks; the family rule in the `DECISIONS.md` DFX-5
+capability line) as the family's new shared reference —
 their first post-DFX fetch is a single pass into their empty `data/` (DFX-5
 fresh-path fix: daily legs are fetched before their monthly jobs).
 
 Independent review of the data-fix stage (2026-10-15, `receipts-lab-study-review`,
 4 adversarial layers over `8e20ffce..200e0ef`): **1 decision-needed, 3 patches,
-2 defers, 3 findings rejected** (roster + refutations in DECISIONS.md). Headline
+2 defers, 3 findings rejected** (roster + refutations in `EVENTS.md`, 2026-10-15
+review lines). Headline
 F1: every offline check was span-relative (each file's own min..max, inner
 joins) or head-only, so a payload truncated at either END passed the whole gate
 — six probes on scratch copies returned 22/22 exit 0. Fixed: battery §1b
@@ -171,6 +174,24 @@ of fix outcome. Review F6/F7 stay deferred; F3/F4 are applied.
 - **Engine:** Python 3.11.16 + pandas 3.0.6 + xlrd 2.0.2 + openpyxl 3.1.5
   (`requirements.txt`);
   fetch script stdlib-only. Analysis scripts land in `code/`.
+
+## Ledger
+
+This study's record is two append-only logs, split by line type on 2026-10-17
+(pre-split blob sha256 `1cfeb5dd…`; the split was verified byte-identical and
+order-preserving):
+
+- **`DECISIONS.md`** — binding entries: decision, constraint, capability,
+  assumption, question. Small on purpose (21 entries, 9.2KB): this is the file
+  the SPEC is re-rendered from and the one a session reads whole.
+- **`EVENTS.md`** — narrative entries: build start/done, validation and review
+  verdicts, gate records, watch-item findings and rulings, each carrying its
+  trailing `state:` block. Sweep it by grep
+  (`grep -o 'state: [^|]*$' EVENTS.md | tail -1`), never read it whole.
+
+Append with `python3 tools/ledger.py append <file> "<line>"` (proves the prior
+bytes are untouched); entry budget ~800 chars of prose, raw probe output goes
+to `code/probes/`.
 
 ## Protocol
 
